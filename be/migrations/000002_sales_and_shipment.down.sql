@@ -1,0 +1,3 @@
+DROP TABLE IF EXISTS sale_allocations;
+DROP TABLE IF EXISTS sales;
+ALTER TABLE lots DROP COLUMN IF EXISTS shipment_status;
