@@ -21,8 +21,8 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
 		return
 	}
-	if req.SKU == "" || req.Name == "" || req.Unit == "" {
-		http.Error(w, `{"error":"sku, name, and unit required"}`, http.StatusBadRequest)
+	if req.Name == "" {
+		http.Error(w, `{"error":"name is required"}`, http.StatusBadRequest)
 		return
 	}
 

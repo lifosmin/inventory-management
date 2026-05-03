@@ -19,10 +19,10 @@ func NewRepository(pool *pgxpool.Pool) *Repository {
 func (r *Repository) Create(ctx context.Context, req CreateProductRequest) (*Product, error) {
 	var p Product
 	err := r.pool.QueryRow(ctx,
-		`INSERT INTO products (sku, name, unit, category) VALUES ($1, $2, $3, $4)
-		 RETURNING id, sku, name, unit, category, created_at`,
-		req.SKU, req.Name, req.Unit, req.Category,
-	).Scan(&p.ID, &p.SKU, &p.Name, &p.Unit, &p.Category, &p.CreatedAt)
+		`INSERT INTO products (name, category) VALUES ($1, $2)
+		 RETURNING id, name, category, created_at`,
+		req.Name, req.Category,
+	).Scan(&p.ID, &p.Name, &p.Category, &p.CreatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("creating product: %w", err)
 	}
@@ -32,8 +32,8 @@ func (r *Repository) Create(ctx context.Context, req CreateProductRequest) (*Pro
 func (r *Repository) GetByID(ctx context.Context, id string) (*Product, error) {
 	var p Product
 	err := r.pool.QueryRow(ctx,
-		`SELECT id, sku, name, unit, category, created_at FROM products WHERE id = $1`, id,
-	).Scan(&p.ID, &p.SKU, &p.Name, &p.Unit, &p.Category, &p.CreatedAt)
+		`SELECT id, name, category, created_at FROM products WHERE id = $1`, id,
+	).Scan(&p.ID, &p.Name, &p.Category, &p.CreatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -45,7 +45,7 @@ func (r *Repository) GetByID(ctx context.Context, id string) (*Product, error) {
 
 func (r *Repository) List(ctx context.Context) ([]Product, error) {
 	rows, err := r.pool.Query(ctx,
-		`SELECT id, sku, name, unit, category, created_at FROM products ORDER BY name`,
+		`SELECT id, name, category, created_at FROM products ORDER BY name`,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("listing products: %w", err)
@@ -55,7 +55,7 @@ func (r *Repository) List(ctx context.Context) ([]Product, error) {
 	var products []Product
 	for rows.Next() {
 		var p Product
-		if err := rows.Scan(&p.ID, &p.SKU, &p.Name, &p.Unit, &p.Category, &p.CreatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Category, &p.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scanning product: %w", err)
 		}
 		products = append(products, p)
@@ -68,12 +68,11 @@ func (r *Repository) Update(ctx context.Context, id string, req UpdateProductReq
 	err := r.pool.QueryRow(ctx,
 		`UPDATE products SET
 			name = COALESCE($2, name),
-			unit = COALESCE($3, unit),
-			category = COALESCE($4, category)
+			category = COALESCE($3, category)
 		 WHERE id = $1
-		 RETURNING id, sku, name, unit, category, created_at`,
-		id, req.Name, req.Unit, req.Category,
-	).Scan(&p.ID, &p.SKU, &p.Name, &p.Unit, &p.Category, &p.CreatedAt)
+		 RETURNING id, name, category, created_at`,
+		id, req.Name, req.Category,
+	).Scan(&p.ID, &p.Name, &p.Category, &p.CreatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}

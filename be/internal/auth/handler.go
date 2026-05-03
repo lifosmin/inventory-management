@@ -3,6 +3,8 @@ package auth
 import (
 	"encoding/json"
 	"net/http"
+
+	"github.com/lifosmin/admin-backend/internal/middleware"
 )
 
 type Handler struct {
@@ -68,4 +70,14 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"message": "logged out"})
+}
+
+func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.UserIDFromCtx(r.Context())
+	role := middleware.RoleFromCtx(r.Context())
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"id":   userID,
+		"role": role,
+	})
 }

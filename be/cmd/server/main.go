@@ -83,6 +83,8 @@ func main() {
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.Auth(cfg.JWT.Secret))
 
+			r.Get("/auth/me", authHandler.Me)
+
 			r.Route("/users", func(r chi.Router) {
 				r.Use(middleware.RequireRole("admin"))
 				r.Get("/", userHandler.List)
