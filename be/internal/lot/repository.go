@@ -19,13 +19,13 @@ func NewRepository(pool *pgxpool.Pool) *Repository {
 func (r *Repository) Create(ctx context.Context, req CreateLotRequest) (*Lot, error) {
 	var l Lot
 	err := r.pool.QueryRow(ctx,
-		`INSERT INTO lots (lot_number, product_id, warehouse_id, quantity, unit_cost, expiry_date, supplier, reference_doc)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-		 RETURNING id, lot_number, product_id, warehouse_id, quantity, unit_cost, total_cost,
+		`INSERT INTO lots (lot_number, product_id, warehouse_id, quantity, initial_quantity, unit_cost, expiry_date, supplier, reference_doc)
+		 VALUES ($1, $2, $3, $4, $4, $5, $6, $7, $8)
+		 RETURNING id, lot_number, product_id, warehouse_id, quantity, initial_quantity, unit_cost, total_cost,
 		           received_at, expiry_date, status, supplier, reference_doc, shipment_status, created_at, updated_at`,
 		req.LotNumber, req.ProductID, req.WarehouseID, req.Quantity, req.UnitCost,
 		req.ExpiryDate, req.Supplier, req.ReferenceDoc,
-	).Scan(&l.ID, &l.LotNumber, &l.ProductID, &l.WarehouseID, &l.Quantity, &l.UnitCost, &l.TotalCost,
+	).Scan(&l.ID, &l.LotNumber, &l.ProductID, &l.WarehouseID, &l.Quantity, &l.InitialQuantity, &l.UnitCost, &l.TotalCost,
 		&l.ReceivedAt, &l.ExpiryDate, &l.Status, &l.Supplier, &l.ReferenceDoc, &l.ShipmentStatus, &l.CreatedAt, &l.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("creating lot: %w", err)
@@ -36,10 +36,10 @@ func (r *Repository) Create(ctx context.Context, req CreateLotRequest) (*Lot, er
 func (r *Repository) GetByID(ctx context.Context, id string) (*Lot, error) {
 	var l Lot
 	err := r.pool.QueryRow(ctx,
-		`SELECT id, lot_number, product_id, warehouse_id, quantity, unit_cost, total_cost,
+		`SELECT id, lot_number, product_id, warehouse_id, quantity, initial_quantity, unit_cost, total_cost,
 		        received_at, expiry_date, status, supplier, reference_doc, shipment_status, created_at, updated_at
 		 FROM lots WHERE id = $1`, id,
-	).Scan(&l.ID, &l.LotNumber, &l.ProductID, &l.WarehouseID, &l.Quantity, &l.UnitCost, &l.TotalCost,
+	).Scan(&l.ID, &l.LotNumber, &l.ProductID, &l.WarehouseID, &l.Quantity, &l.InitialQuantity, &l.UnitCost, &l.TotalCost,
 		&l.ReceivedAt, &l.ExpiryDate, &l.Status, &l.Supplier, &l.ReferenceDoc, &l.ShipmentStatus, &l.CreatedAt, &l.UpdatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, nil
@@ -53,7 +53,7 @@ func (r *Repository) GetByID(ctx context.Context, id string) (*Lot, error) {
 func (r *Repository) List(ctx context.Context) ([]Lot, error) {
 	rows, err := r.pool.Query(ctx,
 		`SELECT l.id, l.lot_number, l.product_id, p.name, l.warehouse_id, w.name,
-		        l.quantity, l.unit_cost, l.total_cost,
+		        l.quantity, l.initial_quantity, l.unit_cost, l.total_cost,
 		        l.received_at, l.expiry_date, l.status, l.supplier, l.reference_doc,
 		        l.shipment_status, l.created_at, l.updated_at
 		 FROM lots l
@@ -70,7 +70,7 @@ func (r *Repository) List(ctx context.Context) ([]Lot, error) {
 	for rows.Next() {
 		var l Lot
 		if err := rows.Scan(&l.ID, &l.LotNumber, &l.ProductID, &l.ProductName, &l.WarehouseID, &l.WarehouseName,
-			&l.Quantity, &l.UnitCost, &l.TotalCost,
+			&l.Quantity, &l.InitialQuantity, &l.UnitCost, &l.TotalCost,
 			&l.ReceivedAt, &l.ExpiryDate, &l.Status, &l.Supplier, &l.ReferenceDoc,
 			&l.ShipmentStatus, &l.CreatedAt, &l.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scanning lot: %w", err)
@@ -82,7 +82,7 @@ func (r *Repository) List(ctx context.Context) ([]Lot, error) {
 
 func (r *Repository) ListByProductFIFO(ctx context.Context, productID string) ([]Lot, error) {
 	rows, err := r.pool.Query(ctx,
-		`SELECT id, lot_number, product_id, warehouse_id, quantity, unit_cost, total_cost,
+		`SELECT id, lot_number, product_id, warehouse_id, quantity, initial_quantity, unit_cost, total_cost,
 		        received_at, expiry_date, status, supplier, reference_doc, shipment_status, created_at, updated_at
 		 FROM lots
 		 WHERE product_id = $1 AND status = 'available' AND quantity > 0
@@ -96,7 +96,7 @@ func (r *Repository) ListByProductFIFO(ctx context.Context, productID string) ([
 	var lots []Lot
 	for rows.Next() {
 		var l Lot
-		if err := rows.Scan(&l.ID, &l.LotNumber, &l.ProductID, &l.WarehouseID, &l.Quantity, &l.UnitCost, &l.TotalCost,
+		if err := rows.Scan(&l.ID, &l.LotNumber, &l.ProductID, &l.WarehouseID, &l.Quantity, &l.InitialQuantity, &l.UnitCost, &l.TotalCost,
 			&l.ReceivedAt, &l.ExpiryDate, &l.Status, &l.Supplier, &l.ReferenceDoc, &l.ShipmentStatus, &l.CreatedAt, &l.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scanning lot: %w", err)
 		}
@@ -107,7 +107,7 @@ func (r *Repository) ListByProductFIFO(ctx context.Context, productID string) ([
 
 func (r *Repository) ListAvailableByProductWarehouse(ctx context.Context, productID, warehouseID string) ([]Lot, error) {
 	rows, err := r.pool.Query(ctx,
-		`SELECT id, lot_number, product_id, warehouse_id, quantity, unit_cost, total_cost,
+		`SELECT id, lot_number, product_id, warehouse_id, quantity, initial_quantity, unit_cost, total_cost,
 		        received_at, expiry_date, status, supplier, reference_doc, shipment_status, created_at, updated_at
 		 FROM lots
 		 WHERE product_id = $1 AND warehouse_id = $2 AND status = 'available' AND quantity > 0
@@ -121,7 +121,7 @@ func (r *Repository) ListAvailableByProductWarehouse(ctx context.Context, produc
 	var lots []Lot
 	for rows.Next() {
 		var l Lot
-		if err := rows.Scan(&l.ID, &l.LotNumber, &l.ProductID, &l.WarehouseID, &l.Quantity, &l.UnitCost, &l.TotalCost,
+		if err := rows.Scan(&l.ID, &l.LotNumber, &l.ProductID, &l.WarehouseID, &l.Quantity, &l.InitialQuantity, &l.UnitCost, &l.TotalCost,
 			&l.ReceivedAt, &l.ExpiryDate, &l.Status, &l.Supplier, &l.ReferenceDoc, &l.ShipmentStatus, &l.CreatedAt, &l.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scanning lot: %w", err)
 		}
@@ -140,10 +140,10 @@ func (r *Repository) Update(ctx context.Context, id string, req UpdateLotRequest
 			warehouse_id = COALESCE($5, warehouse_id),
 			updated_at = now()
 		 WHERE id = $1
-		 RETURNING id, lot_number, product_id, warehouse_id, quantity, unit_cost, total_cost,
+		 RETURNING id, lot_number, product_id, warehouse_id, quantity, initial_quantity, unit_cost, total_cost,
 		           received_at, expiry_date, status, supplier, reference_doc, shipment_status, created_at, updated_at`,
 		id, req.Status, req.Quantity, req.ExpiryDate, req.WarehouseID,
-	).Scan(&l.ID, &l.LotNumber, &l.ProductID, &l.WarehouseID, &l.Quantity, &l.UnitCost, &l.TotalCost,
+	).Scan(&l.ID, &l.LotNumber, &l.ProductID, &l.WarehouseID, &l.Quantity, &l.InitialQuantity, &l.UnitCost, &l.TotalCost,
 		&l.ReceivedAt, &l.ExpiryDate, &l.Status, &l.Supplier, &l.ReferenceDoc, &l.ShipmentStatus, &l.CreatedAt, &l.UpdatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, nil

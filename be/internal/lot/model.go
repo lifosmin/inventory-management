@@ -14,15 +14,16 @@ const (
 )
 
 type Lot struct {
-	ID             string    `json:"id"`
-	LotNumber      string    `json:"lot_number"`
-	ProductID      string    `json:"product_id"`
-	ProductName    string    `json:"product_name,omitempty"`
-	WarehouseID    string    `json:"warehouse_id"`
-	WarehouseName  string    `json:"warehouse_name,omitempty"`
-	Quantity       float64   `json:"quantity"`
-	UnitCost       float64   `json:"unit_cost"`
-	TotalCost      float64   `json:"total_cost"`
+	ID              string    `json:"id"`
+	LotNumber       string    `json:"lot_number"`
+	ProductID       string    `json:"product_id"`
+	ProductName     string    `json:"product_name,omitempty"`
+	WarehouseID     string    `json:"warehouse_id"`
+	WarehouseName   string    `json:"warehouse_name,omitempty"`
+	Quantity        float64   `json:"quantity"`
+	InitialQuantity float64   `json:"initial_quantity"`
+	UnitCost        float64   `json:"unit_cost"`
+	TotalCost       float64   `json:"total_cost"`
 	ReceivedAt     time.Time `json:"received_at"`
 	ExpiryDate     *string   `json:"expiry_date,omitempty"`
 	Status         Status    `json:"status"`

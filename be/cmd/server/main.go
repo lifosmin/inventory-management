@@ -149,6 +149,7 @@ func main() {
 			r.Route("/reports", func(r chi.Router) {
 				r.Get("/valuation", reportHandler.Valuation)
 				r.Get("/aging", reportHandler.Aging)
+				r.Get("/export", reportHandler.Export)
 			})
 		})
 	})
