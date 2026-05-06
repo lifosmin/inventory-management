@@ -17,7 +17,7 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	Port         int           `env:"SERVER_PORT,default=8080"`
+	Port         int           `env:"PORT,default=8080"`
 	ReadTimeout  time.Duration `env:"SERVER_READ_TIMEOUT,default=10s"`
 	WriteTimeout time.Duration `env:"SERVER_WRITE_TIMEOUT,default=10s"`
 	IdleTimeout  time.Duration `env:"SERVER_IDLE_TIMEOUT,default=120s"`
