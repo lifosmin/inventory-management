@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/lifosmin/admin-backend/internal/config"
 	"github.com/lifosmin/admin-backend/internal/db"
@@ -32,6 +33,10 @@ func main() {
 		Role:     user.RoleAdmin,
 	})
 	if err != nil {
+		if strings.Contains(err.Error(), "duplicate key") {
+			fmt.Println("Admin user already exists, skipping")
+			return
+		}
 		log.Fatalf("creating admin user: %v", err)
 	}
 
