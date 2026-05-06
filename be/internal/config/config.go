@@ -10,10 +10,10 @@ import (
 )
 
 type Config struct {
-	Server   ServerConfig
-	DB       DBConfig
-	JWT      JWTConfig
-	CORS     CORSConfig
+	Server ServerConfig
+	DB     DBConfig
+	JWT    JWTConfig
+	CORS   CORSConfig
 }
 
 type ServerConfig struct {

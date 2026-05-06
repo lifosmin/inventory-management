@@ -23,7 +23,7 @@ func main() {
 		log.Fatalf("loading config: %v", err)
 	}
 
-	m, err := migrate.New("file://migrations", cfg.DB.DSN())
+	m, err := migrate.New("file:///migrations", cfg.DB.DSN())
 	if err != nil {
 		log.Fatalf("creating migrator: %v", err)
 	}
