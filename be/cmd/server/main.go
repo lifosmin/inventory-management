@@ -72,6 +72,10 @@ func main() {
 	r.Use(middleware.Logging(logger))
 	r.Use(middleware.CORS(cfg.CORS.AllowedOrigin))
 
+	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Route("/auth", func(r chi.Router) {
 			r.Use(middleware.RateLimit(20, time.Minute))
