@@ -26,14 +26,14 @@ type Lot struct {
 	TotalCost       float64   `json:"total_cost"`
 	PaidAmount      float64   `json:"paid_amount"`
 	PaymentStatus   string    `json:"payment_status"`
-	ReceivedAt     time.Time `json:"received_at"`
-	ExpiryDate     *string   `json:"expiry_date,omitempty"`
-	Status         Status    `json:"status"`
-	Supplier       string    `json:"supplier,omitempty"`
-	ReferenceDoc   string    `json:"reference_doc,omitempty"`
-	ShipmentStatus string    `json:"shipment_status"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	ReceivedAt      time.Time `json:"received_at"`
+	ExpiryDate      *string   `json:"expiry_date,omitempty"`
+	Status          Status    `json:"status"`
+	Supplier        string    `json:"supplier,omitempty"`
+	ReferenceDoc    string    `json:"reference_doc,omitempty"`
+	ShipmentStatus  string    `json:"shipment_status"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 type CreateLotRequest struct {
@@ -48,10 +48,10 @@ type CreateLotRequest struct {
 }
 
 type UpdateLotRequest struct {
-	Status       *Status  `json:"status,omitempty"`
-	Quantity     *float64 `json:"quantity,omitempty"`
-	ExpiryDate   *string  `json:"expiry_date,omitempty"`
-	WarehouseID  *string  `json:"warehouse_id,omitempty"`
+	Status      *Status  `json:"status,omitempty"`
+	Quantity    *float64 `json:"quantity,omitempty"`
+	ExpiryDate  *string  `json:"expiry_date,omitempty"`
+	WarehouseID *string  `json:"warehouse_id,omitempty"`
 }
 
 type AddPaymentRequest struct {
