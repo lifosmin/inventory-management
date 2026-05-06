@@ -11,7 +11,8 @@ import (
 )
 
 var (
-	ErrInsufficientStock = errors.New("insufficient stock for this sale")
+	ErrInsufficientStock   = errors.New("insufficient stock for this sale")
+	ErrPaymentExceedsTotal = errors.New("payment exceeds total owed")
 )
 
 type Service struct {
@@ -98,6 +99,10 @@ func (s *Service) List(ctx context.Context) ([]Sale, error) {
 
 func (s *Service) UpdateStatus(ctx context.Context, id string, req UpdateStatusRequest) error {
 	return s.repo.UpdateStatus(ctx, id, req)
+}
+
+func (s *Service) AddPayment(ctx context.Context, id string, amount float64) (*Sale, error) {
+	return s.repo.AddPayment(ctx, id, amount)
 }
 
 func (s *Service) GetDashboard(ctx context.Context) (*Dashboard, error) {

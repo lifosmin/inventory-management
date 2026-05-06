@@ -13,6 +13,7 @@ type Sale struct {
 	BuyerName      string       `json:"buyer_name"`
 	Qty            float64      `json:"qty"`
 	SellPrice      float64      `json:"sell_price"`
+	PaidAmount     float64      `json:"paid_amount"`
 	PaymentStatus  string       `json:"payment_status"`
 	ShipmentStatus string       `json:"shipment_status"`
 	CreatedAt      time.Time    `json:"created_at"`
@@ -38,6 +39,9 @@ type CreateSaleRequest struct {
 }
 
 type UpdateStatusRequest struct {
-	PaymentStatus  *string `json:"payment_status,omitempty"`
 	ShipmentStatus *string `json:"shipment_status,omitempty"`
+}
+
+type AddPaymentRequest struct {
+	Amount float64 `json:"amount"`
 }

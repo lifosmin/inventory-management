@@ -124,6 +124,7 @@ func main() {
 					r.Post("/", lotHandler.Create)
 					r.Put("/{id}", lotHandler.Update)
 					r.Patch("/{id}/shipment-status", lotHandler.UpdateShipmentStatus)
+					r.Patch("/{id}/payment", lotHandler.AddPayment)
 				})
 			})
 
@@ -141,6 +142,7 @@ func main() {
 					r.Use(middleware.RequireRole("admin", "manager"))
 					r.Post("/", saleHandler.Create)
 					r.Patch("/{id}/status", saleHandler.UpdateStatus)
+					r.Patch("/{id}/payment", saleHandler.AddPayment)
 				})
 			})
 

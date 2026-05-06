@@ -21,10 +21,10 @@ func (r *Repository) CreateTx(ctx context.Context, tx pgx.Tx, req CreateSaleRequ
 	err := tx.QueryRow(ctx,
 		`INSERT INTO sales (product_id, warehouse_id, buyer_name, qty, sell_price)
 		 VALUES ($1, $2, $3, $4, $5)
-		 RETURNING id, product_id, warehouse_id, buyer_name, qty, sell_price, payment_status, shipment_status, created_at`,
+		 RETURNING id, product_id, warehouse_id, buyer_name, qty, sell_price, paid_amount, payment_status, shipment_status, created_at`,
 		req.ProductID, req.WarehouseID, req.BuyerName, req.Qty, req.SellPrice,
 	).Scan(&s.ID, &s.ProductID, &s.WarehouseID, &s.BuyerName, &s.Qty, &s.SellPrice,
-		&s.PaymentStatus, &s.ShipmentStatus, &s.CreatedAt)
+		&s.PaidAmount, &s.PaymentStatus, &s.ShipmentStatus, &s.CreatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("creating sale: %w", err)
 	}
@@ -48,7 +48,7 @@ func (r *Repository) CreateAllocationTx(ctx context.Context, tx pgx.Tx, saleID, 
 func (r *Repository) List(ctx context.Context) ([]Sale, error) {
 	rows, err := r.pool.Query(ctx,
 		`SELECT s.id, s.product_id, p.name, s.warehouse_id, w.name,
-		        s.buyer_name, s.qty, s.sell_price, s.payment_status, s.shipment_status, s.created_at
+		        s.buyer_name, s.qty, s.sell_price, s.paid_amount, s.payment_status, s.shipment_status, s.created_at
 		 FROM sales s
 		 JOIN products p ON s.product_id = p.id
 		 JOIN warehouses w ON s.warehouse_id = w.id
@@ -63,7 +63,7 @@ func (r *Repository) List(ctx context.Context) ([]Sale, error) {
 	for rows.Next() {
 		var s Sale
 		if err := rows.Scan(&s.ID, &s.ProductID, &s.ProductName, &s.WarehouseID, &s.WarehouseName,
-			&s.BuyerName, &s.Qty, &s.SellPrice, &s.PaymentStatus, &s.ShipmentStatus, &s.CreatedAt); err != nil {
+			&s.BuyerName, &s.Qty, &s.SellPrice, &s.PaidAmount, &s.PaymentStatus, &s.ShipmentStatus, &s.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scanning sale: %w", err)
 		}
 		sales = append(sales, s)
@@ -74,13 +74,50 @@ func (r *Repository) List(ctx context.Context) ([]Sale, error) {
 func (r *Repository) UpdateStatus(ctx context.Context, id string, req UpdateStatusRequest) error {
 	_, err := r.pool.Exec(ctx,
 		`UPDATE sales SET
-			payment_status = COALESCE($2, payment_status),
-			shipment_status = COALESCE($3, shipment_status)
+			shipment_status = COALESCE($2, shipment_status)
 		 WHERE id = $1`,
-		id, req.PaymentStatus, req.ShipmentStatus,
+		id, req.ShipmentStatus,
 	)
 	if err != nil {
 		return fmt.Errorf("updating sale status: %w", err)
 	}
 	return nil
+}
+
+func (r *Repository) AddPayment(ctx context.Context, id string, amount float64) (*Sale, error) {
+	var currentPaid, totalOwed float64
+	err := r.pool.QueryRow(ctx,
+		`SELECT paid_amount, qty * sell_price FROM sales WHERE id = $1`, id,
+	).Scan(&currentPaid, &totalOwed)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("fetching sale for payment: %w", err)
+	}
+	if currentPaid+amount > totalOwed {
+		return nil, ErrPaymentExceedsTotal
+	}
+
+	var s Sale
+	err = r.pool.QueryRow(ctx,
+		`UPDATE sales SET
+			paid_amount = paid_amount + $2,
+			payment_status = CASE
+				WHEN paid_amount + $2 <= 0 THEN 'unpaid'
+				WHEN paid_amount + $2 >= qty * sell_price THEN 'fully_paid'
+				ELSE 'dp'
+			END
+		 WHERE id = $1
+		 RETURNING id, product_id, warehouse_id, buyer_name, qty, sell_price, paid_amount, payment_status, shipment_status, created_at`,
+		id, amount,
+	).Scan(&s.ID, &s.ProductID, &s.WarehouseID, &s.BuyerName, &s.Qty, &s.SellPrice,
+		&s.PaidAmount, &s.PaymentStatus, &s.ShipmentStatus, &s.CreatedAt)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("adding sale payment: %w", err)
+	}
+	return &s, nil
 }

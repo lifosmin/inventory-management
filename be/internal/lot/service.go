@@ -5,7 +5,10 @@ import (
 	"errors"
 )
 
-var ErrLotNotFound = errors.New("lot not found")
+var (
+	ErrLotNotFound         = errors.New("lot not found")
+	ErrPaymentExceedsTotal = errors.New("payment exceeds total owed")
+)
 
 type Service struct {
 	repo *Repository

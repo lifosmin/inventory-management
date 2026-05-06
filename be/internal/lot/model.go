@@ -24,6 +24,8 @@ type Lot struct {
 	InitialQuantity float64   `json:"initial_quantity"`
 	UnitCost        float64   `json:"unit_cost"`
 	TotalCost       float64   `json:"total_cost"`
+	PaidAmount      float64   `json:"paid_amount"`
+	PaymentStatus   string    `json:"payment_status"`
 	ReceivedAt     time.Time `json:"received_at"`
 	ExpiryDate     *string   `json:"expiry_date,omitempty"`
 	Status         Status    `json:"status"`
@@ -50,4 +52,8 @@ type UpdateLotRequest struct {
 	Quantity     *float64 `json:"quantity,omitempty"`
 	ExpiryDate   *string  `json:"expiry_date,omitempty"`
 	WarehouseID  *string  `json:"warehouse_id,omitempty"`
+}
+
+type AddPaymentRequest struct {
+	Amount float64 `json:"amount"`
 }

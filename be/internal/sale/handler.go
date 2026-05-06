@@ -69,6 +69,36 @@ func (h *Handler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"message": "updated"})
 }
 
+func (h *Handler) AddPayment(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var req AddPaymentRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+	if req.Amount <= 0 {
+		http.Error(w, `{"error":"amount must be positive"}`, http.StatusBadRequest)
+		return
+	}
+
+	s, err := h.service.AddPayment(r.Context(), id, req.Amount)
+	if err != nil {
+		if err == ErrPaymentExceedsTotal {
+			http.Error(w, `{"error":"payment would exceed total owed"}`, http.StatusUnprocessableEntity)
+			return
+		}
+		http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
+		return
+	}
+	if s == nil {
+		http.Error(w, `{"error":"sale not found"}`, http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(s)
+}
+
 func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	d, err := h.service.GetDashboard(r.Context())
 	if err != nil {
