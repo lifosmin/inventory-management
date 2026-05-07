@@ -63,3 +63,22 @@ type DeliverLotRequest struct {
 	AdditionalCost    float64 `json:"additional_cost"`
 	ActualReceivedQty float64 `json:"actual_received_qty"`
 }
+
+type ListParams struct {
+	Limit          int
+	Offset         int
+	SortBy         string
+	SortDir        string
+	Search         string
+	ProductID      string
+	WarehouseID    string
+	ShipmentStatus string
+	PaymentStatus  string
+	DateFrom       string
+	DateTo         string
+}
+
+type ListResult struct {
+	Total int   `json:"total"`
+	Data  []Lot `json:"data"`
+}

@@ -148,19 +148,27 @@ type PaymentSummary struct {
 	TotalOutstanding float64 `json:"total_outstanding"`
 }
 
+type RestockCostSummary struct {
+	TotalOrdered float64 `json:"total_ordered"`
+	TotalPaid    float64 `json:"total_paid"`
+	TotalUnpaid  float64 `json:"total_unpaid"`
+	LotsCount    int     `json:"lots_count"`
+}
+
 type ExportReport struct {
-	From            string            `json:"from"`
-	To              string            `json:"to"`
-	NetWorth        float64           `json:"net_worth"`
-	TotalRevenue    float64           `json:"total_revenue"`
-	TotalCOGS       float64           `json:"total_cogs"`
-	ProfitLoss      float64           `json:"profit_loss"`
-	PaymentSummary  PaymentSummary    `json:"payment_summary"`
-	ProductPerf     []ProductPerfLine `json:"product_perf"`
-	SupplierSummary []SupplierLine    `json:"supplier_summary"`
-	Stocks          []StockLine       `json:"stocks"`
-	Restocks        []RestockLine     `json:"restocks"`
-	Sales           []SaleLine        `json:"sales"`
+	From               string             `json:"from"`
+	To                 string             `json:"to"`
+	NetWorth           float64            `json:"net_worth"`
+	TotalRevenue       float64            `json:"total_revenue"`
+	TotalCOGS          float64            `json:"total_cogs"`
+	ProfitLoss         float64            `json:"profit_loss"`
+	PaymentSummary     PaymentSummary     `json:"payment_summary"`
+	RestockCostSummary RestockCostSummary `json:"restock_cost_summary"`
+	ProductPerf        []ProductPerfLine  `json:"product_perf"`
+	SupplierSummary    []SupplierLine     `json:"supplier_summary"`
+	Stocks             []StockLine        `json:"stocks"`
+	Restocks           []RestockLine      `json:"restocks"`
+	Sales              []SaleLine         `json:"sales"`
 }
 
 func (s *Service) Export(ctx context.Context, from, to time.Time) (*ExportReport, error) {
@@ -206,6 +214,27 @@ func (s *Service) Export(ctx context.Context, from, to time.Time) (*ExportReport
 	).Scan(&report.PaymentSummary.TotalBilled, &report.PaymentSummary.TotalCollected, &report.PaymentSummary.TotalOutstanding)
 	if err != nil {
 		return nil, fmt.Errorf("querying payment summary: %w", err)
+	}
+
+	// Restock cost summary (lots created in period, non-canceled)
+	err = s.pool.QueryRow(ctx,
+		`SELECT
+			COALESCE(SUM(initial_quantity * unit_cost), 0),
+			COALESCE(SUM(paid_amount), 0),
+			COALESCE(SUM(initial_quantity * unit_cost - paid_amount), 0),
+			COUNT(*)
+		 FROM lots
+		 WHERE created_at >= $1 AND created_at < $2
+		   AND shipment_status != 'canceled'`,
+		from, toInclusive,
+	).Scan(
+		&report.RestockCostSummary.TotalOrdered,
+		&report.RestockCostSummary.TotalPaid,
+		&report.RestockCostSummary.TotalUnpaid,
+		&report.RestockCostSummary.LotsCount,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("querying restock cost summary: %w", err)
 	}
 
 	// Product performance

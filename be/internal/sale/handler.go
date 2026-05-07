@@ -2,6 +2,7 @@ package sale
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -42,14 +43,32 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
-	sales, err := h.service.List(r.Context())
+	params := ListParams{
+		SortBy:         r.URL.Query().Get("sort_by"),
+		SortDir:        r.URL.Query().Get("sort_dir"),
+		Search:         r.URL.Query().Get("search"),
+		ProductID:      r.URL.Query().Get("product_id"),
+		WarehouseID:    r.URL.Query().Get("warehouse_id"),
+		ShipmentStatus: r.URL.Query().Get("shipment_status"),
+		PaymentStatus:  r.URL.Query().Get("payment_status"),
+		DateFrom:       r.URL.Query().Get("date_from"),
+		DateTo:         r.URL.Query().Get("date_to"),
+	}
+	if v := r.URL.Query().Get("limit"); v != "" {
+		fmt.Sscan(v, &params.Limit)
+	}
+	if v := r.URL.Query().Get("offset"); v != "" {
+		fmt.Sscan(v, &params.Offset)
+	}
+
+	result, err := h.service.List(r.Context(), params)
 	if err != nil {
 		http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(sales)
+	json.NewEncoder(w).Encode(result)
 }
 
 func (h *Handler) UpdateStatus(w http.ResponseWriter, r *http.Request) {

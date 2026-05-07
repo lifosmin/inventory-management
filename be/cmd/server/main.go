@@ -121,6 +121,7 @@ func main() {
 
 			r.Route("/lots", func(r chi.Router) {
 				r.Get("/", lotHandler.List)
+				r.Get("/available-qty", lotHandler.GetAvailableQty)
 				r.Get("/{id}", lotHandler.GetByID)
 				r.Get("/{id}/movements", inventoryHandler.ListByLot)
 				r.Group(func(r chi.Router) {

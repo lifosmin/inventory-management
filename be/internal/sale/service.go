@@ -97,8 +97,8 @@ func (s *Service) Create(ctx context.Context, req CreateSaleRequest) (*Sale, err
 	return sale, nil
 }
 
-func (s *Service) List(ctx context.Context) ([]Sale, error) {
-	return s.repo.List(ctx)
+func (s *Service) List(ctx context.Context, params ListParams) (*ListResult, error) {
+	return s.repo.List(ctx, params)
 }
 
 func (s *Service) UpdateStatus(ctx context.Context, id string, req UpdateStatusRequest) error {
@@ -120,15 +120,16 @@ func (s *Service) GetDashboard(ctx context.Context) (*Dashboard, error) {
 	err := s.pool.QueryRow(ctx,
 		`SELECT
 			COALESCE(SUM(sa.qty * s.sell_price), 0),
-			COALESCE(SUM(sa.qty * sa.unit_cost), 0)
+			COALESCE(SUM(sa.qty * sa.unit_cost), 0),
+			COALESCE(SUM(s.paid_amount), 0)
 		 FROM sale_allocations sa
 		 JOIN sales s ON sa.sale_id = s.id
 		 WHERE s.shipment_status != 'canceled'`,
-	).Scan(&d.TotalRevenue, &d.TotalCOGS)
+	).Scan(&d.TotalRevenue, &d.TotalCOGS, &d.CollectedRevenue)
 	if err != nil && err != pgx.ErrNoRows {
 		return nil, fmt.Errorf("querying revenue/cogs: %w", err)
 	}
-	d.ProfitLoss = d.TotalRevenue - d.TotalCOGS
+	d.ProfitLoss = d.CollectedRevenue - d.TotalCOGS
 
 	// Pending revenue — outstanding balance on active unpaid/dp sales
 	err = s.pool.QueryRow(ctx,
@@ -275,6 +276,7 @@ type ActiveSaleItem struct {
 type Dashboard struct {
 	TotalRevenue        float64            `json:"total_revenue"`
 	TotalCOGS           float64            `json:"total_cogs"`
+	CollectedRevenue    float64            `json:"collected_revenue"`
 	ProfitLoss          float64            `json:"profit_loss"`
 	PendingRevenue      float64            `json:"pending_revenue"`
 	StockValueOnHand    float64            `json:"stock_value_on_hand"`

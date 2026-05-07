@@ -3,6 +3,7 @@ package sale
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -45,14 +46,94 @@ func (r *Repository) CreateAllocationTx(ctx context.Context, tx pgx.Tx, saleID, 
 	return &a, nil
 }
 
-func (r *Repository) List(ctx context.Context) ([]Sale, error) {
+func (r *Repository) List(ctx context.Context, params ListParams) (*ListResult, error) {
+	allowedSort := map[string]string{
+		"buyer_name":      "s.buyer_name",
+		"product_name":    "p.name",
+		"warehouse_name":  "w.name",
+		"qty":             "s.qty",
+		"sell_price":      "s.sell_price",
+		"total":           "s.qty * s.sell_price",
+		"paid_amount":     "s.paid_amount",
+		"payment_status":  "s.payment_status",
+		"shipment_status": "s.shipment_status",
+		"created_at":      "s.created_at",
+	}
+	sortCol, ok := allowedSort[params.SortBy]
+	if !ok {
+		sortCol = "s.created_at"
+	}
+	sortDir := "DESC"
+	if params.SortDir == "asc" {
+		sortDir = "ASC"
+	}
+	if params.Limit <= 0 {
+		params.Limit = 50
+	}
+	if params.Offset < 0 {
+		params.Offset = 0
+	}
+
+	args := []any{}
+	where := []string{}
+	nextArg := func(v any) string {
+		args = append(args, v)
+		return fmt.Sprintf("$%d", len(args))
+	}
+
+	if params.Search != "" {
+		p := nextArg("%" + params.Search + "%")
+		where = append(where, fmt.Sprintf("(s.buyer_name ILIKE %s OR p.name ILIKE %s)", p, p))
+	}
+	if params.ProductID != "" {
+		where = append(where, fmt.Sprintf("s.product_id = %s", nextArg(params.ProductID)))
+	}
+	if params.WarehouseID != "" {
+		where = append(where, fmt.Sprintf("s.warehouse_id = %s", nextArg(params.WarehouseID)))
+	}
+	if params.ShipmentStatus != "" {
+		where = append(where, fmt.Sprintf("s.shipment_status = %s", nextArg(params.ShipmentStatus)))
+	}
+	if params.PaymentStatus != "" {
+		where = append(where, fmt.Sprintf("s.payment_status = %s", nextArg(params.PaymentStatus)))
+	}
+	if params.DateFrom != "" {
+		where = append(where, fmt.Sprintf("s.created_at >= %s::date", nextArg(params.DateFrom)))
+	}
+	if params.DateTo != "" {
+		where = append(where, fmt.Sprintf("s.created_at < (%s::date + interval '1 day')", nextArg(params.DateTo)))
+	}
+
+	whereSQL := ""
+	if len(where) > 0 {
+		whereSQL = "WHERE " + strings.Join(where, " AND ")
+	}
+
+	countArgs := append([]any{}, args...)
+	var total int
+	err := r.pool.QueryRow(ctx,
+		`SELECT COUNT(*)
+		 FROM sales s
+		 JOIN products p ON s.product_id = p.id
+		 JOIN warehouses w ON s.warehouse_id = w.id
+		 `+whereSQL, countArgs...,
+	).Scan(&total)
+	if err != nil {
+		return nil, fmt.Errorf("counting sales: %w", err)
+	}
+
+	limitArg := nextArg(params.Limit)
+	offsetArg := nextArg(params.Offset)
+
 	rows, err := r.pool.Query(ctx,
 		`SELECT s.id, s.product_id, p.name, s.warehouse_id, w.name,
 		        s.buyer_name, s.qty, s.sell_price, s.paid_amount, s.payment_status, s.shipment_status, s.created_at
 		 FROM sales s
 		 JOIN products p ON s.product_id = p.id
 		 JOIN warehouses w ON s.warehouse_id = w.id
-		 ORDER BY s.created_at DESC`,
+		 `+whereSQL+`
+		 ORDER BY `+sortCol+` `+sortDir+`
+		 LIMIT `+limitArg+` OFFSET `+offsetArg, args...,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("listing sales: %w", err)
@@ -68,7 +149,10 @@ func (r *Repository) List(ctx context.Context) ([]Sale, error) {
 		}
 		sales = append(sales, s)
 	}
-	return sales, nil
+	if sales == nil {
+		sales = []Sale{}
+	}
+	return &ListResult{Total: total, Data: sales}, nil
 }
 
 func (r *Repository) UpdateStatus(ctx context.Context, id string, req UpdateStatusRequest) error {

@@ -38,8 +38,8 @@ func (s *Service) GetByID(ctx context.Context, id string) (*Lot, error) {
 	return l, nil
 }
 
-func (s *Service) List(ctx context.Context) ([]Lot, error) {
-	return s.repo.List(ctx)
+func (s *Service) List(ctx context.Context, params ListParams) (*ListResult, error) {
+	return s.repo.List(ctx, params)
 }
 
 func (s *Service) ListByProductFIFO(ctx context.Context, productID string) ([]Lot, error) {

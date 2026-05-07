@@ -3,6 +3,7 @@ package lot
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -51,7 +52,86 @@ func (r *Repository) GetByID(ctx context.Context, id string) (*Lot, error) {
 	return &l, nil
 }
 
-func (r *Repository) List(ctx context.Context) ([]Lot, error) {
+func (r *Repository) List(ctx context.Context, params ListParams) (*ListResult, error) {
+	allowedSort := map[string]string{
+		"lot_number":      "l.lot_number",
+		"product_name":    "p.name",
+		"warehouse_name":  "w.name",
+		"quantity":        "l.quantity",
+		"unit_cost":       "l.unit_cost",
+		"total_cost":      "l.total_cost",
+		"paid_amount":     "l.paid_amount",
+		"payment_status":  "l.payment_status",
+		"shipment_status": "l.shipment_status",
+		"received_at":     "l.received_at",
+		"created_at":      "l.created_at",
+	}
+	sortCol, ok := allowedSort[params.SortBy]
+	if !ok {
+		sortCol = "l.received_at"
+	}
+	sortDir := "DESC"
+	if params.SortDir == "asc" {
+		sortDir = "ASC"
+	}
+	if params.Limit <= 0 {
+		params.Limit = 50
+	}
+	if params.Offset < 0 {
+		params.Offset = 0
+	}
+
+	args := []any{}
+	where := []string{}
+	nextArg := func(v any) string {
+		args = append(args, v)
+		return fmt.Sprintf("$%d", len(args))
+	}
+
+	if params.Search != "" {
+		p := nextArg("%" + params.Search + "%")
+		where = append(where, fmt.Sprintf("(l.lot_number ILIKE %s OR p.name ILIKE %s OR l.supplier ILIKE %s)", p, p, p))
+	}
+	if params.ProductID != "" {
+		where = append(where, fmt.Sprintf("l.product_id = %s", nextArg(params.ProductID)))
+	}
+	if params.WarehouseID != "" {
+		where = append(where, fmt.Sprintf("l.warehouse_id = %s", nextArg(params.WarehouseID)))
+	}
+	if params.ShipmentStatus != "" {
+		where = append(where, fmt.Sprintf("l.shipment_status = %s", nextArg(params.ShipmentStatus)))
+	}
+	if params.PaymentStatus != "" {
+		where = append(where, fmt.Sprintf("l.payment_status = %s", nextArg(params.PaymentStatus)))
+	}
+	if params.DateFrom != "" {
+		where = append(where, fmt.Sprintf("l.created_at >= %s::date", nextArg(params.DateFrom)))
+	}
+	if params.DateTo != "" {
+		where = append(where, fmt.Sprintf("l.created_at < (%s::date + interval '1 day')", nextArg(params.DateTo)))
+	}
+
+	whereSQL := ""
+	if len(where) > 0 {
+		whereSQL = "WHERE " + strings.Join(where, " AND ")
+	}
+
+	countArgs := append([]any{}, args...)
+	var total int
+	err := r.pool.QueryRow(ctx,
+		`SELECT COUNT(*)
+		 FROM lots l
+		 JOIN products p ON l.product_id = p.id
+		 JOIN warehouses w ON l.warehouse_id = w.id
+		 `+whereSQL, countArgs...,
+	).Scan(&total)
+	if err != nil {
+		return nil, fmt.Errorf("counting lots: %w", err)
+	}
+
+	limitArg := nextArg(params.Limit)
+	offsetArg := nextArg(params.Offset)
+
 	rows, err := r.pool.Query(ctx,
 		`SELECT l.id, l.lot_number, l.product_id, p.name, l.warehouse_id, w.name,
 		        l.quantity, l.initial_quantity, l.unit_cost, l.total_cost,
@@ -60,7 +140,9 @@ func (r *Repository) List(ctx context.Context) ([]Lot, error) {
 		 FROM lots l
 		 JOIN products p ON l.product_id = p.id
 		 JOIN warehouses w ON l.warehouse_id = w.id
-		 ORDER BY l.received_at DESC`,
+		 `+whereSQL+`
+		 ORDER BY `+sortCol+` `+sortDir+`
+		 LIMIT `+limitArg+` OFFSET `+offsetArg, args...,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("listing lots: %w", err)
@@ -78,7 +160,10 @@ func (r *Repository) List(ctx context.Context) ([]Lot, error) {
 		}
 		lots = append(lots, l)
 	}
-	return lots, nil
+	if lots == nil {
+		lots = []Lot{}
+	}
+	return &ListResult{Total: total, Data: lots}, nil
 }
 
 func (r *Repository) ListByProductFIFO(ctx context.Context, productID string) ([]Lot, error) {
@@ -255,15 +340,15 @@ func (r *Repository) MarkDelivered(ctx context.Context, id string, deliveredDate
 	}
 	defer tx.Rollback(ctx)
 
-	var origInitialQty, origQty, origUnitCost float64
+	var origInitialQty, origQty, origUnitCost, origPaidAmount float64
 	var origLotNumber, origProductID, origWarehouseID, origSupplier, origReferenceDoc, origShipmentStatus string
 	var origExpiryDate *string
 	err = tx.QueryRow(ctx,
 		`SELECT lot_number, product_id, warehouse_id, initial_quantity, quantity, unit_cost,
-		        supplier, reference_doc, expiry_date, shipment_status
+		        paid_amount, supplier, reference_doc, expiry_date, shipment_status
 		 FROM lots WHERE id = $1 FOR UPDATE`, id,
 	).Scan(&origLotNumber, &origProductID, &origWarehouseID, &origInitialQty, &origQty,
-		&origUnitCost, &origSupplier, &origReferenceDoc, &origExpiryDate, &origShipmentStatus)
+		&origUnitCost, &origPaidAmount, &origSupplier, &origReferenceDoc, &origExpiryDate, &origShipmentStatus)
 	if err == pgx.ErrNoRows {
 		return nil, ErrLotNotFound
 	}
@@ -308,6 +393,41 @@ func (r *Repository) MarkDelivered(ctx context.Context, id string, deliveredDate
 
 	remainingQty := origInitialQty - actualReceivedQty
 	if remainingQty > 0 {
+		// Split paid_amount proportionally between delivered and back-order portions
+		boPaidAmount := origPaidAmount * (remainingQty / origInitialQty)
+		origNewPaid := origPaidAmount - boPaidAmount
+
+		// Determine payment_status for the back-order lot
+		boCost := remainingQty * origUnitCost
+		var boPaymentStatus string
+		if boPaidAmount <= 0 {
+			boPaymentStatus = "unpaid"
+		} else if boPaidAmount >= boCost {
+			boPaymentStatus = "fully_paid"
+		} else {
+			boPaymentStatus = "dp"
+		}
+
+		// Determine updated payment_status for the original lot
+		origCost := actualReceivedQty * newUnitCost
+		var origPaymentStatus string
+		if origNewPaid <= 0 {
+			origPaymentStatus = "unpaid"
+		} else if origNewPaid >= origCost {
+			origPaymentStatus = "fully_paid"
+		} else {
+			origPaymentStatus = "dp"
+		}
+
+		// Update the original lot's paid_amount and payment_status to reflect its smaller share
+		_, err = tx.Exec(ctx,
+			`UPDATE lots SET paid_amount = $2, payment_status = $3, updated_at = now() WHERE id = $1`,
+			id, origNewPaid, origPaymentStatus,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("updating original lot payment after split: %w", err)
+		}
+
 		var boCount int
 		_ = tx.QueryRow(ctx,
 			`SELECT COUNT(*) FROM lots WHERE lot_number LIKE $1`,
@@ -321,10 +441,11 @@ func (r *Repository) MarkDelivered(ctx context.Context, id string, deliveredDate
 		}
 		_, err = tx.Exec(ctx,
 			`INSERT INTO lots (lot_number, product_id, warehouse_id, quantity, initial_quantity, unit_cost,
-			                   supplier, reference_doc, expiry_date, shipment_status, status, received_at)
-			 VALUES ($1, $2, $3, $4, $4, $5, $6, $7, $8, 'in_progress', 'available', $9)`,
+			                   paid_amount, payment_status, supplier, reference_doc, expiry_date,
+			                   shipment_status, status, received_at)
+			 VALUES ($1, $2, $3, $4, $4, $5, $6, $7, $8, $9, $10, 'in_progress', 'available', $11)`,
 			boLotNumber, origProductID, origWarehouseID, remainingQty, origUnitCost,
-			origSupplier, origReferenceDoc, origExpiryDate, time.Now(),
+			boPaidAmount, boPaymentStatus, origSupplier, origReferenceDoc, origExpiryDate, time.Now(),
 		)
 		if err != nil {
 			return nil, fmt.Errorf("creating back-order lot: %w", err)
@@ -385,4 +506,36 @@ func (r *Repository) Cancel(ctx context.Context, id string) error {
 		return fmt.Errorf("committing lot cancel: %w", err)
 	}
 	return nil
+}
+
+type AvailableQtyItem struct {
+	WarehouseID   string  `json:"warehouse_id"`
+	WarehouseName string  `json:"warehouse_name"`
+	Qty           float64 `json:"qty"`
+}
+
+func (r *Repository) GetAvailableQtyByProduct(ctx context.Context, productID string) ([]AvailableQtyItem, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT w.id, w.name, COALESCE(SUM(l.quantity), 0)
+		 FROM warehouses w
+		 LEFT JOIN lots l ON l.warehouse_id = w.id
+		   AND l.product_id = $1
+		   AND l.status = 'available'
+		   AND l.quantity > 0
+		 GROUP BY w.id, w.name
+		 ORDER BY w.name`, productID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("querying available qty: %w", err)
+	}
+	defer rows.Close()
+	var items []AvailableQtyItem
+	for rows.Next() {
+		var item AvailableQtyItem
+		if err := rows.Scan(&item.WarehouseID, &item.WarehouseName, &item.Qty); err != nil {
+			return nil, fmt.Errorf("scanning available qty: %w", err)
+		}
+		items = append(items, item)
+	}
+	return items, nil
 }
