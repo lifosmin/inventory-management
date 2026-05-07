@@ -28,6 +28,10 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 
 	p, err := h.service.Create(r.Context(), req)
 	if err != nil {
+		if err.Error() == "a product with this name already exists" {
+			http.Error(w, `{"error":"a product with this name already exists"}`, http.StatusConflict)
+			return
+		}
 		http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
 		return
 	}

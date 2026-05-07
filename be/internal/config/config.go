@@ -42,7 +42,7 @@ func (d DBConfig) DSN() string {
 
 type JWTConfig struct {
 	Secret            string        `env:"JWT_SECRET,required"`
-	AccessExpiration  time.Duration `env:"JWT_ACCESS_EXPIRATION,default=15m"`
+	AccessExpiration  time.Duration `env:"JWT_ACCESS_EXPIRATION,default=3h"`
 	RefreshExpiration time.Duration `env:"JWT_REFRESH_EXPIRATION,default=168h"`
 }
 

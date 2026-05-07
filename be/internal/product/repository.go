@@ -2,9 +2,11 @@ package product
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -24,6 +26,10 @@ func (r *Repository) Create(ctx context.Context, req CreateProductRequest) (*Pro
 		req.Name, req.Category,
 	).Scan(&p.ID, &p.Name, &p.Category, &p.CreatedAt)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return nil, fmt.Errorf("a product with this name already exists")
+		}
 		return nil, fmt.Errorf("creating product: %w", err)
 	}
 	return &p, nil

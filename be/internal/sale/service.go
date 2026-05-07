@@ -171,32 +171,51 @@ func (s *Service) GetDashboard(ctx context.Context) (*Dashboard, error) {
 		return nil, fmt.Errorf("querying lot payment counts: %w", err)
 	}
 
-	// Stock summary per product (only products with active stock)
+	// Stock summary per product+warehouse (only products with active stock)
 	stockRows, err := s.pool.Query(ctx,
 		`SELECT
 			p.name,
+			COALESCE(w.name, 'Unknown'),
 			COALESCE(SUM(CASE WHEN l.shipment_status = 'delivered' AND l.status = 'available' THEN l.quantity ELSE 0 END), 0) AS qty_on_hand,
 			COALESCE(SUM(CASE WHEN l.shipment_status = 'in_progress' THEN l.initial_quantity ELSE 0 END), 0) AS qty_in_transit
 		 FROM products p
 		 LEFT JOIN lots l ON l.product_id = p.id AND l.shipment_status != 'canceled'
-		 GROUP BY p.id, p.name
+		 LEFT JOIN warehouses w ON l.warehouse_id = w.id
+		 GROUP BY p.id, p.name, w.id, w.name
 		 HAVING
 			SUM(CASE WHEN l.shipment_status = 'delivered' AND l.status = 'available' THEN l.quantity ELSE 0 END) > 0
 			OR SUM(CASE WHEN l.shipment_status = 'in_progress' THEN l.initial_quantity ELSE 0 END) > 0
-		 ORDER BY p.name`,
+		 ORDER BY p.name, w.name`,
 	)
 	if err != nil && err != pgx.ErrNoRows {
 		return nil, fmt.Errorf("querying stock summary: %w", err)
 	}
 	d.StockSummary = []StockSummaryItem{}
+	productIndex := map[string]int{}
 	if stockRows != nil {
 		defer stockRows.Close()
 		for stockRows.Next() {
-			var item StockSummaryItem
-			if err := stockRows.Scan(&item.ProductName, &item.QtyOnHand, &item.QtyInTransit); err != nil {
+			var productName, warehouseName string
+			var qtyOnHand, qtyInTransit float64
+			if err := stockRows.Scan(&productName, &warehouseName, &qtyOnHand, &qtyInTransit); err != nil {
 				return nil, fmt.Errorf("scanning stock summary: %w", err)
 			}
-			d.StockSummary = append(d.StockSummary, item)
+			idx, exists := productIndex[productName]
+			if !exists {
+				d.StockSummary = append(d.StockSummary, StockSummaryItem{
+					ProductName: productName,
+					Warehouses:  []WarehouseDetail{},
+				})
+				idx = len(d.StockSummary) - 1
+				productIndex[productName] = idx
+			}
+			d.StockSummary[idx].QtyOnHand += qtyOnHand
+			d.StockSummary[idx].QtyInTransit += qtyInTransit
+			d.StockSummary[idx].Warehouses = append(d.StockSummary[idx].Warehouses, WarehouseDetail{
+				WarehouseName: warehouseName,
+				QtyOnHand:     qtyOnHand,
+				QtyInTransit:  qtyInTransit,
+			})
 		}
 	}
 
@@ -256,9 +275,16 @@ type TopCustomer struct {
 }
 
 type StockSummaryItem struct {
-	ProductName  string  `json:"product_name"`
-	QtyOnHand    float64 `json:"qty_on_hand"`
-	QtyInTransit float64 `json:"qty_in_transit"`
+	ProductName  string          `json:"product_name"`
+	QtyOnHand    float64         `json:"qty_on_hand"`
+	QtyInTransit float64         `json:"qty_in_transit"`
+	Warehouses   []WarehouseDetail `json:"warehouses"`
+}
+
+type WarehouseDetail struct {
+	WarehouseName string  `json:"warehouse_name"`
+	QtyOnHand     float64 `json:"qty_on_hand"`
+	QtyInTransit  float64 `json:"qty_in_transit"`
 }
 
 type ActiveSaleItem struct {
