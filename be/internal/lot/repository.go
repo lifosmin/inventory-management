@@ -107,13 +107,44 @@ func (r *Repository) ListByProductFIFO(ctx context.Context, productID string) ([
 }
 
 func (r *Repository) ListAvailableByProductWarehouse(ctx context.Context, productID, warehouseID string) ([]Lot, error) {
-	rows, err := r.pool.Query(ctx,
-		`SELECT id, lot_number, product_id, warehouse_id, quantity, initial_quantity, unit_cost, total_cost,
-		        received_at, expiry_date, status, supplier, reference_doc, shipment_status, created_at, updated_at
-		 FROM lots
-		 WHERE product_id = $1 AND warehouse_id = $2 AND status = 'available' AND quantity > 0
-		 ORDER BY received_at ASC`, productID, warehouseID,
-	)
+	var strategy string
+	err := r.pool.QueryRow(ctx,
+		`SELECT fifo_strategy FROM warehouses WHERE id = $1`, warehouseID,
+	).Scan(&strategy)
+	if err != nil {
+		strategy = "created_at"
+	}
+
+	var orderBy string
+	var deliveredOnly bool
+	switch strategy {
+	case "received_at":
+		orderBy = "received_at ASC"
+		deliveredOnly = true
+	default:
+		orderBy = "created_at ASC"
+		deliveredOnly = false
+	}
+
+	var rows pgx.Rows
+	if deliveredOnly {
+		rows, err = r.pool.Query(ctx,
+			`SELECT id, lot_number, product_id, warehouse_id, quantity, initial_quantity, unit_cost, total_cost,
+			        received_at, expiry_date, status, supplier, reference_doc, shipment_status, created_at, updated_at
+			 FROM lots
+			 WHERE product_id = $1 AND warehouse_id = $2 AND status = 'available' AND quantity > 0
+			   AND shipment_status = 'delivered'
+			 ORDER BY `+orderBy, productID, warehouseID,
+		)
+	} else {
+		rows, err = r.pool.Query(ctx,
+			`SELECT id, lot_number, product_id, warehouse_id, quantity, initial_quantity, unit_cost, total_cost,
+			        received_at, expiry_date, status, supplier, reference_doc, shipment_status, created_at, updated_at
+			 FROM lots
+			 WHERE product_id = $1 AND warehouse_id = $2 AND status = 'available' AND quantity > 0
+			 ORDER BY `+orderBy, productID, warehouseID,
+		)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("listing available lots: %w", err)
 	}

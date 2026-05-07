@@ -59,7 +59,7 @@ type AddPaymentRequest struct {
 }
 
 type DeliverLotRequest struct {
-	DeliveredDate      string  `json:"delivered_date"`
-	AdditionalCost     float64 `json:"additional_cost"`
-	ActualReceivedQty  float64 `json:"actual_received_qty"`
+	DeliveredDate     string  `json:"delivered_date"`
+	AdditionalCost    float64 `json:"additional_cost"`
+	ActualReceivedQty float64 `json:"actual_received_qty"`
 }

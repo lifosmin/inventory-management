@@ -6,13 +6,13 @@ import (
 )
 
 var (
-	ErrLotNotFound           = errors.New("lot not found")
-	ErrPaymentExceedsTotal   = errors.New("payment exceeds total owed")
-	ErrActualQtyBelowSold    = errors.New("actual received qty cannot be less than already sold qty")
-	ErrQtyExceedsOrdered     = errors.New("actual received qty exceeds originally ordered qty")
-	ErrAlreadyDelivered      = errors.New("lot is already delivered")
-	ErrLotAlreadyCanceled    = errors.New("lot is already canceled")
-	ErrLotHasDependentSales  = errors.New("lot has active dependent sales and cannot be canceled")
+	ErrLotNotFound          = errors.New("lot not found")
+	ErrPaymentExceedsTotal  = errors.New("payment exceeds total owed")
+	ErrActualQtyBelowSold   = errors.New("actual received qty cannot be less than already sold qty")
+	ErrQtyExceedsOrdered    = errors.New("actual received qty exceeds originally ordered qty")
+	ErrAlreadyDelivered     = errors.New("lot is already delivered")
+	ErrLotAlreadyCanceled   = errors.New("lot is already canceled")
+	ErrLotHasDependentSales = errors.New("lot has active dependent sales and cannot be canceled")
 )
 
 type Service struct {

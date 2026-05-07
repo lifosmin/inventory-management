@@ -17,12 +17,16 @@ func NewRepository(pool *pgxpool.Pool) *Repository {
 }
 
 func (r *Repository) Create(ctx context.Context, req CreateWarehouseRequest) (*Warehouse, error) {
+	strategy := req.FifoStrategy
+	if strategy == "" {
+		strategy = "created_at"
+	}
 	var w Warehouse
 	err := r.pool.QueryRow(ctx,
-		`INSERT INTO warehouses (name, address) VALUES ($1, $2)
-		 RETURNING id, name, address, created_at`,
-		req.Name, req.Address,
-	).Scan(&w.ID, &w.Name, &w.Address, &w.CreatedAt)
+		`INSERT INTO warehouses (name, address, fifo_strategy) VALUES ($1, $2, $3)
+		 RETURNING id, name, address, fifo_strategy, created_at`,
+		req.Name, req.Address, strategy,
+	).Scan(&w.ID, &w.Name, &w.Address, &w.FifoStrategy, &w.CreatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("creating warehouse: %w", err)
 	}
@@ -32,8 +36,8 @@ func (r *Repository) Create(ctx context.Context, req CreateWarehouseRequest) (*W
 func (r *Repository) GetByID(ctx context.Context, id string) (*Warehouse, error) {
 	var w Warehouse
 	err := r.pool.QueryRow(ctx,
-		`SELECT id, name, address, created_at FROM warehouses WHERE id = $1`, id,
-	).Scan(&w.ID, &w.Name, &w.Address, &w.CreatedAt)
+		`SELECT id, name, address, fifo_strategy, created_at FROM warehouses WHERE id = $1`, id,
+	).Scan(&w.ID, &w.Name, &w.Address, &w.FifoStrategy, &w.CreatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -45,7 +49,7 @@ func (r *Repository) GetByID(ctx context.Context, id string) (*Warehouse, error)
 
 func (r *Repository) List(ctx context.Context) ([]Warehouse, error) {
 	rows, err := r.pool.Query(ctx,
-		`SELECT id, name, address, created_at FROM warehouses ORDER BY name`,
+		`SELECT id, name, address, fifo_strategy, created_at FROM warehouses ORDER BY name`,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("listing warehouses: %w", err)
@@ -55,7 +59,7 @@ func (r *Repository) List(ctx context.Context) ([]Warehouse, error) {
 	var warehouses []Warehouse
 	for rows.Next() {
 		var w Warehouse
-		if err := rows.Scan(&w.ID, &w.Name, &w.Address, &w.CreatedAt); err != nil {
+		if err := rows.Scan(&w.ID, &w.Name, &w.Address, &w.FifoStrategy, &w.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scanning warehouse: %w", err)
 		}
 		warehouses = append(warehouses, w)
@@ -67,12 +71,13 @@ func (r *Repository) Update(ctx context.Context, id string, req UpdateWarehouseR
 	var w Warehouse
 	err := r.pool.QueryRow(ctx,
 		`UPDATE warehouses SET
-			name = COALESCE($2, name),
-			address = COALESCE($3, address)
+			name          = COALESCE($2, name),
+			address       = COALESCE($3, address),
+			fifo_strategy = COALESCE($4, fifo_strategy)
 		 WHERE id = $1
-		 RETURNING id, name, address, created_at`,
-		id, req.Name, req.Address,
-	).Scan(&w.ID, &w.Name, &w.Address, &w.CreatedAt)
+		 RETURNING id, name, address, fifo_strategy, created_at`,
+		id, req.Name, req.Address, req.FifoStrategy,
+	).Scan(&w.ID, &w.Name, &w.Address, &w.FifoStrategy, &w.CreatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
