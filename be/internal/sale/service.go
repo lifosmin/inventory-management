@@ -11,8 +11,11 @@ import (
 )
 
 var (
-	ErrInsufficientStock   = errors.New("insufficient stock for this sale")
-	ErrPaymentExceedsTotal = errors.New("payment exceeds total owed")
+	ErrInsufficientStock    = errors.New("insufficient stock for this sale")
+	ErrPaymentExceedsTotal  = errors.New("payment exceeds total owed")
+	ErrSaleNotFound         = errors.New("sale not found")
+	ErrSaleAlreadyDelivered = errors.New("sale is already delivered")
+	ErrSaleAlreadyCanceled  = errors.New("sale is already canceled")
 )
 
 type Service struct {
@@ -103,6 +106,10 @@ func (s *Service) UpdateStatus(ctx context.Context, id string, req UpdateStatusR
 
 func (s *Service) AddPayment(ctx context.Context, id string, amount float64) (*Sale, error) {
 	return s.repo.AddPayment(ctx, id, amount)
+}
+
+func (s *Service) Cancel(ctx context.Context, id string) error {
+	return s.repo.Cancel(ctx, id)
 }
 
 func (s *Service) GetDashboard(ctx context.Context) (*Dashboard, error) {

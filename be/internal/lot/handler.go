@@ -167,11 +167,27 @@ func (h *Handler) MarkDelivered(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"additional_cost cannot be negative"}`, http.StatusBadRequest)
 		return
 	}
+	if req.ActualReceivedQty <= 0 {
+		http.Error(w, `{"error":"actual_received_qty must be positive"}`, http.StatusBadRequest)
+		return
+	}
 
-	l, err := h.repo.MarkDelivered(r.Context(), id, req.DeliveredDate, req.AdditionalCost)
+	l, err := h.repo.MarkDelivered(r.Context(), id, req.DeliveredDate, req.AdditionalCost, req.ActualReceivedQty)
 	if err != nil {
 		if err == ErrLotNotFound {
 			http.Error(w, `{"error":"lot not found"}`, http.StatusNotFound)
+			return
+		}
+		if err == ErrAlreadyDelivered {
+			http.Error(w, `{"error":"lot is already delivered"}`, http.StatusConflict)
+			return
+		}
+		if err == ErrQtyExceedsOrdered {
+			http.Error(w, `{"error":"actual received qty exceeds originally ordered qty"}`, http.StatusUnprocessableEntity)
+			return
+		}
+		if err == ErrActualQtyBelowSold {
+			http.Error(w, `{"error":"actual received qty cannot be less than already sold qty"}`, http.StatusUnprocessableEntity)
 			return
 		}
 		h.logger.Error("lot mark delivered failed", "id", id, "error", err)
@@ -181,4 +197,26 @@ func (h *Handler) MarkDelivered(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(l)
+}
+
+func (h *Handler) Cancel(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := h.repo.Cancel(r.Context(), id); err != nil {
+		switch err {
+		case ErrLotNotFound:
+			http.Error(w, `{"error":"lot not found"}`, http.StatusNotFound)
+		case ErrAlreadyDelivered:
+			http.Error(w, `{"error":"lot is already delivered and cannot be canceled"}`, http.StatusConflict)
+		case ErrLotAlreadyCanceled:
+			http.Error(w, `{"error":"lot is already canceled"}`, http.StatusConflict)
+		case ErrLotHasDependentSales:
+			http.Error(w, `{"error":"lot has active dependent sales and cannot be canceled"}`, http.StatusConflict)
+		default:
+			h.logger.Error("lot cancel failed", "id", id, "error", err)
+			http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
+		}
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"message": "canceled"})
 }

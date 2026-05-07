@@ -121,3 +121,76 @@ func (r *Repository) AddPayment(ctx context.Context, id string, amount float64) 
 	}
 	return &s, nil
 }
+func (r *Repository) Cancel(ctx context.Context, id string) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("beginning transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	var shipmentStatus string
+	err = tx.QueryRow(ctx,
+		`SELECT shipment_status FROM sales WHERE id = $1 FOR UPDATE`, id,
+	).Scan(&shipmentStatus)
+	if err == pgx.ErrNoRows {
+		return ErrSaleNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("fetching sale for cancel: %w", err)
+	}
+	if shipmentStatus == "delivered" {
+		return ErrSaleAlreadyDelivered
+	}
+	if shipmentStatus == "canceled" {
+		return ErrSaleAlreadyCanceled
+	}
+
+	rows, err := tx.Query(ctx,
+		`SELECT lot_id, qty FROM sale_allocations WHERE sale_id = $1`, id,
+	)
+	if err != nil {
+		return fmt.Errorf("fetching allocations: %w", err)
+	}
+	type alloc struct {
+		lotID string
+		qty   float64
+	}
+	var allocs []alloc
+	for rows.Next() {
+		var a alloc
+		if err := rows.Scan(&a.lotID, &a.qty); err != nil {
+			rows.Close()
+			return fmt.Errorf("scanning allocation: %w", err)
+		}
+		allocs = append(allocs, a)
+	}
+	rows.Close()
+
+	for _, a := range allocs {
+		_, err = tx.Exec(ctx,
+			`UPDATE lots SET
+				quantity   = quantity + $2,
+				status     = CASE WHEN status != 'canceled' THEN 'available' ELSE status END,
+				updated_at = now()
+			 WHERE id = $1`, a.lotID, a.qty,
+		)
+		if err != nil {
+			return fmt.Errorf("restoring lot quantity: %w", err)
+		}
+	}
+
+	_, err = tx.Exec(ctx, `DELETE FROM sale_allocations WHERE sale_id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("deleting allocations: %w", err)
+	}
+
+	_, err = tx.Exec(ctx, `UPDATE sales SET shipment_status = 'canceled' WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("canceling sale: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("committing sale cancel: %w", err)
+	}
+	return nil
+}

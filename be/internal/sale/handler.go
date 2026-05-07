@@ -99,6 +99,25 @@ func (h *Handler) AddPayment(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(s)
 }
 
+func (h *Handler) Cancel(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := h.service.Cancel(r.Context(), id); err != nil {
+		switch err {
+		case ErrSaleNotFound:
+			http.Error(w, `{"error":"sale not found"}`, http.StatusNotFound)
+		case ErrSaleAlreadyDelivered:
+			http.Error(w, `{"error":"sale is already delivered and cannot be canceled"}`, http.StatusConflict)
+		case ErrSaleAlreadyCanceled:
+			http.Error(w, `{"error":"sale is already canceled"}`, http.StatusConflict)
+		default:
+			http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
+		}
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"message": "canceled"})
+}
+
 func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	d, err := h.service.GetDashboard(r.Context())
 	if err != nil {

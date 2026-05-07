@@ -130,6 +130,7 @@ func main() {
 					r.Patch("/{id}/shipment-status", lotHandler.UpdateShipmentStatus)
 					r.Patch("/{id}/payment", lotHandler.AddPayment)
 					r.Patch("/{id}/deliver", lotHandler.MarkDelivered)
+					r.Patch("/{id}/cancel", lotHandler.Cancel)
 				})
 			})
 
@@ -148,6 +149,7 @@ func main() {
 					r.Post("/", saleHandler.Create)
 					r.Patch("/{id}/status", saleHandler.UpdateStatus)
 					r.Patch("/{id}/payment", saleHandler.AddPayment)
+					r.Patch("/{id}/cancel", saleHandler.Cancel)
 				})
 			})
 

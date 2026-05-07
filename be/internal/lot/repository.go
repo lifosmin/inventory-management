@@ -3,6 +3,7 @@ package lot
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -216,25 +217,141 @@ func (r *Repository) AddPayment(ctx context.Context, id string, amount float64) 
 	return &l, nil
 }
 
-func (r *Repository) MarkDelivered(ctx context.Context, id string, deliveredDate string, additionalCost float64) (*Lot, error) {
-	var l Lot
-	err := r.pool.QueryRow(ctx,
-		`UPDATE lots SET
-			shipment_status = 'delivered',
-			unit_cost = (initial_quantity * unit_cost + $3) / NULLIF(initial_quantity, 0),
-			received_at = $2::date,
-			updated_at = now()
-		 WHERE id = $1
-		 RETURNING id, lot_number, product_id, warehouse_id, quantity, initial_quantity, unit_cost, total_cost,
-		           paid_amount, payment_status, received_at, expiry_date, status, supplier, reference_doc, shipment_status, created_at, updated_at`,
-		id, deliveredDate, additionalCost,
-	).Scan(&l.ID, &l.LotNumber, &l.ProductID, &l.WarehouseID, &l.Quantity, &l.InitialQuantity, &l.UnitCost, &l.TotalCost,
-		&l.PaidAmount, &l.PaymentStatus, &l.ReceivedAt, &l.ExpiryDate, &l.Status, &l.Supplier, &l.ReferenceDoc, &l.ShipmentStatus, &l.CreatedAt, &l.UpdatedAt)
+func (r *Repository) MarkDelivered(ctx context.Context, id string, deliveredDate string, additionalCost float64, actualReceivedQty float64) (*Lot, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("beginning transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	var origInitialQty, origQty, origUnitCost float64
+	var origLotNumber, origProductID, origWarehouseID, origSupplier, origReferenceDoc, origShipmentStatus string
+	var origExpiryDate *string
+	err = tx.QueryRow(ctx,
+		`SELECT lot_number, product_id, warehouse_id, initial_quantity, quantity, unit_cost,
+		        supplier, reference_doc, expiry_date, shipment_status
+		 FROM lots WHERE id = $1 FOR UPDATE`, id,
+	).Scan(&origLotNumber, &origProductID, &origWarehouseID, &origInitialQty, &origQty,
+		&origUnitCost, &origSupplier, &origReferenceDoc, &origExpiryDate, &origShipmentStatus)
 	if err == pgx.ErrNoRows {
 		return nil, ErrLotNotFound
 	}
 	if err != nil {
-		return nil, fmt.Errorf("marking lot delivered: %w", err)
+		return nil, fmt.Errorf("fetching lot for delivery: %w", err)
+	}
+
+	if origShipmentStatus == "delivered" {
+		return nil, ErrAlreadyDelivered
+	}
+
+	if actualReceivedQty > origInitialQty {
+		return nil, ErrQtyExceedsOrdered
+	}
+
+	alreadySold := origInitialQty - origQty
+	if actualReceivedQty < alreadySold {
+		return nil, ErrActualQtyBelowSold
+	}
+
+	newUnitCost := (actualReceivedQty*origUnitCost + additionalCost) / actualReceivedQty
+	newQty := actualReceivedQty - alreadySold
+
+	var l Lot
+	err = tx.QueryRow(ctx,
+		`UPDATE lots SET
+			shipment_status  = 'delivered',
+			initial_quantity = $2,
+			quantity         = $3,
+			unit_cost        = $4,
+			received_at      = $5::date,
+			updated_at       = now()
+		 WHERE id = $1
+		 RETURNING id, lot_number, product_id, warehouse_id, quantity, initial_quantity, unit_cost, total_cost,
+		           paid_amount, payment_status, received_at, expiry_date, status, supplier, reference_doc, shipment_status, created_at, updated_at`,
+		id, actualReceivedQty, newQty, newUnitCost, deliveredDate,
+	).Scan(&l.ID, &l.LotNumber, &l.ProductID, &l.WarehouseID, &l.Quantity, &l.InitialQuantity, &l.UnitCost, &l.TotalCost,
+		&l.PaidAmount, &l.PaymentStatus, &l.ReceivedAt, &l.ExpiryDate, &l.Status, &l.Supplier, &l.ReferenceDoc, &l.ShipmentStatus, &l.CreatedAt, &l.UpdatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("updating lot for delivery: %w", err)
+	}
+
+	remainingQty := origInitialQty - actualReceivedQty
+	if remainingQty > 0 {
+		var boCount int
+		_ = tx.QueryRow(ctx,
+			`SELECT COUNT(*) FROM lots WHERE lot_number LIKE $1`,
+			origLotNumber+"-BO%",
+		).Scan(&boCount)
+		var boLotNumber string
+		if boCount == 0 {
+			boLotNumber = origLotNumber + "-BO"
+		} else {
+			boLotNumber = fmt.Sprintf("%s-BO%d", origLotNumber, boCount+1)
+		}
+		_, err = tx.Exec(ctx,
+			`INSERT INTO lots (lot_number, product_id, warehouse_id, quantity, initial_quantity, unit_cost,
+			                   supplier, reference_doc, expiry_date, shipment_status, status, received_at)
+			 VALUES ($1, $2, $3, $4, $4, $5, $6, $7, $8, 'in_progress', 'available', $9)`,
+			boLotNumber, origProductID, origWarehouseID, remainingQty, origUnitCost,
+			origSupplier, origReferenceDoc, origExpiryDate, time.Now(),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("creating back-order lot: %w", err)
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("committing delivery transaction: %w", err)
 	}
 	return &l, nil
+}
+
+func (r *Repository) Cancel(ctx context.Context, id string) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("beginning transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	var shipmentStatus string
+	err = tx.QueryRow(ctx,
+		`SELECT shipment_status FROM lots WHERE id = $1 FOR UPDATE`, id,
+	).Scan(&shipmentStatus)
+	if err == pgx.ErrNoRows {
+		return ErrLotNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("fetching lot for cancel: %w", err)
+	}
+	if shipmentStatus == "delivered" {
+		return ErrAlreadyDelivered
+	}
+	if shipmentStatus == "canceled" {
+		return ErrLotAlreadyCanceled
+	}
+
+	var allocCount int
+	err = tx.QueryRow(ctx,
+		`SELECT COUNT(*) FROM sale_allocations sa
+		 JOIN sales s ON sa.sale_id = s.id
+		 WHERE sa.lot_id = $1 AND s.shipment_status != 'canceled'`, id,
+	).Scan(&allocCount)
+	if err != nil {
+		return fmt.Errorf("checking dependent sales: %w", err)
+	}
+	if allocCount > 0 {
+		return ErrLotHasDependentSales
+	}
+
+	_, err = tx.Exec(ctx,
+		`UPDATE lots SET shipment_status = 'canceled', status = 'depleted', updated_at = now() WHERE id = $1`, id,
+	)
+	if err != nil {
+		return fmt.Errorf("canceling lot: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("committing lot cancel: %w", err)
+	}
+	return nil
 }
