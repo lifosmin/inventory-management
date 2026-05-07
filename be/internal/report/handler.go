@@ -84,10 +84,32 @@ func (h *Handler) exportCSV(w http.ResponseWriter, rpt *ExportReport) {
 	cw.Write([]string{})
 
 	cw.Write([]string{"SUMMARY"})
-	cw.Write([]string{"Net Worth", fmt.Sprintf("%.0f", rpt.NetWorth)})
-	cw.Write([]string{"Total Revenue", fmt.Sprintf("%.0f", rpt.TotalRevenue)})
-	cw.Write([]string{"Total COGS", fmt.Sprintf("%.0f", rpt.TotalCOGS)})
-	cw.Write([]string{"Profit/Loss", fmt.Sprintf("%.0f", rpt.ProfitLoss)})
+	cw.Write([]string{"Net Worth (current)", fmt.Sprintf("%.0f", rpt.NetWorth)})
+	cw.Write([]string{"Total Revenue (period)", fmt.Sprintf("%.0f", rpt.TotalRevenue)})
+	cw.Write([]string{"Total COGS (period)", fmt.Sprintf("%.0f", rpt.TotalCOGS)})
+	cw.Write([]string{"Profit/Loss (period)", fmt.Sprintf("%.0f", rpt.ProfitLoss)})
+	cw.Write([]string{})
+
+	cw.Write([]string{"PAYMENT COLLECTION"})
+	cw.Write([]string{"Total Billed", fmt.Sprintf("%.0f", rpt.PaymentSummary.TotalBilled)})
+	cw.Write([]string{"Total Collected", fmt.Sprintf("%.0f", rpt.PaymentSummary.TotalCollected)})
+	cw.Write([]string{"Outstanding", fmt.Sprintf("%.0f", rpt.PaymentSummary.TotalOutstanding)})
+	cw.Write([]string{})
+
+	cw.Write([]string{"PRODUCT PERFORMANCE"})
+	cw.Write([]string{"Product", "Qty Sold", "Revenue", "COGS", "Gross Margin", "Margin %"})
+	for _, p := range rpt.ProductPerf {
+		cw.Write([]string{p.ProductName, fmt.Sprintf("%.0f", p.QtySold),
+			fmt.Sprintf("%.0f", p.Revenue), fmt.Sprintf("%.0f", p.COGS),
+			fmt.Sprintf("%.0f", p.GrossMargin), fmt.Sprintf("%.1f%%", p.MarginPct)})
+	}
+	cw.Write([]string{})
+
+	cw.Write([]string{"SUPPLIER SUMMARY"})
+	cw.Write([]string{"Supplier", "Orders", "Total Cost"})
+	for _, s := range rpt.SupplierSummary {
+		cw.Write([]string{s.Supplier, fmt.Sprintf("%d", s.TotalOrders), fmt.Sprintf("%.0f", s.TotalCost)})
+	}
 	cw.Write([]string{})
 
 	cw.Write([]string{"CURRENT STOCKS"})
@@ -98,19 +120,20 @@ func (h *Handler) exportCSV(w http.ResponseWriter, rpt *ExportReport) {
 	cw.Write([]string{})
 
 	cw.Write([]string{"RESTOCKS (in period)"})
-	cw.Write([]string{"Lot Number", "Product", "Warehouse", "Qty", "Unit Cost", "Total Cost", "Supplier", "Date"})
+	cw.Write([]string{"Lot Number", "Product", "Warehouse", "Qty", "Unit Cost", "Total Cost", "Supplier", "Status", "Date"})
 	for _, r := range rpt.Restocks {
 		cw.Write([]string{r.LotNumber, r.ProductName, r.WarehouseName,
 			fmt.Sprintf("%.0f", r.Quantity), fmt.Sprintf("%.0f", r.UnitCost), fmt.Sprintf("%.0f", r.TotalCost),
-			r.Supplier, r.CreatedAt.Format("2006-01-02")})
+			r.Supplier, r.ShipmentStatus, r.CreatedAt.Format("2006-01-02")})
 	}
 	cw.Write([]string{})
 
 	cw.Write([]string{"SALES (in period)"})
-	cw.Write([]string{"Buyer", "Product", "Warehouse", "Qty", "Sell Price", "Total", "Date"})
+	cw.Write([]string{"Buyer", "Product", "Warehouse", "Qty", "Sell Price", "Total", "Paid", "Payment Status", "Shipment Status", "Date"})
 	for _, s := range rpt.Sales {
 		cw.Write([]string{s.BuyerName, s.ProductName, s.WarehouseName,
 			fmt.Sprintf("%.0f", s.Qty), fmt.Sprintf("%.0f", s.SellPrice), fmt.Sprintf("%.0f", s.Total),
+			fmt.Sprintf("%.0f", s.PaidAmount), s.PaymentStatus, s.ShipmentStatus,
 			s.CreatedAt.Format("2006-01-02")})
 	}
 }
