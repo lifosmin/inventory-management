@@ -129,6 +129,7 @@ func main() {
 					r.Put("/{id}", lotHandler.Update)
 					r.Patch("/{id}/shipment-status", lotHandler.UpdateShipmentStatus)
 					r.Patch("/{id}/payment", lotHandler.AddPayment)
+					r.Patch("/{id}/deliver", lotHandler.MarkDelivered)
 				})
 			})
 

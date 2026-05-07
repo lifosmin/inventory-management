@@ -57,3 +57,8 @@ type UpdateLotRequest struct {
 type AddPaymentRequest struct {
 	Amount float64 `json:"amount"`
 }
+
+type DeliverLotRequest struct {
+	DeliveredDate  string  `json:"delivered_date"`
+	AdditionalCost float64 `json:"additional_cost"`
+}

@@ -2,6 +2,7 @@ package lot
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -10,10 +11,11 @@ import (
 type Handler struct {
 	service *Service
 	repo    *Repository
+	logger  *slog.Logger
 }
 
 func NewHandler(service *Service, repo *Repository) *Handler {
-	return &Handler{service: service, repo: repo}
+	return &Handler{service: service, repo: repo, logger: slog.Default()}
 }
 
 func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
@@ -33,6 +35,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 
 	l, err := h.service.Create(r.Context(), req)
 	if err != nil {
+		h.logger.Error("lot create failed", "error", err)
 		http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
 		return
 	}
@@ -50,6 +53,7 @@ func (h *Handler) GetByID(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, `{"error":"lot not found"}`, http.StatusNotFound)
 			return
 		}
+		h.logger.Error("lot getbyid failed", "id", id, "error", err)
 		http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
 		return
 	}
@@ -61,6 +65,7 @@ func (h *Handler) GetByID(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	lots, err := h.service.List(r.Context())
 	if err != nil {
+		h.logger.Error("lot list failed", "error", err)
 		http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
 		return
 	}
@@ -83,6 +88,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, `{"error":"lot not found"}`, http.StatusNotFound)
 			return
 		}
+		h.logger.Error("lot update failed", "id", id, "error", err)
 		http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
 		return
 	}
@@ -106,6 +112,7 @@ func (h *Handler) UpdateShipmentStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.repo.UpdateShipmentStatus(r.Context(), id, body.ShipmentStatus); err != nil {
+		h.logger.Error("lot update shipment status failed", "id", id, "error", err)
 		http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
 		return
 	}
@@ -132,11 +139,43 @@ func (h *Handler) AddPayment(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, `{"error":"payment would exceed total owed"}`, http.StatusUnprocessableEntity)
 			return
 		}
+		h.logger.Error("lot add payment failed", "id", id, "error", err)
 		http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
 		return
 	}
 	if l == nil {
 		http.Error(w, `{"error":"lot not found"}`, http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(l)
+}
+
+func (h *Handler) MarkDelivered(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var req DeliverLotRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+	if req.DeliveredDate == "" {
+		http.Error(w, `{"error":"delivered_date required"}`, http.StatusBadRequest)
+		return
+	}
+	if req.AdditionalCost < 0 {
+		http.Error(w, `{"error":"additional_cost cannot be negative"}`, http.StatusBadRequest)
+		return
+	}
+
+	l, err := h.repo.MarkDelivered(r.Context(), id, req.DeliveredDate, req.AdditionalCost)
+	if err != nil {
+		if err == ErrLotNotFound {
+			http.Error(w, `{"error":"lot not found"}`, http.StatusNotFound)
+			return
+		}
+		h.logger.Error("lot mark delivered failed", "id", id, "error", err)
+		http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
 		return
 	}
 

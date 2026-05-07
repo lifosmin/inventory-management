@@ -215,3 +215,26 @@ func (r *Repository) AddPayment(ctx context.Context, id string, amount float64) 
 	}
 	return &l, nil
 }
+
+func (r *Repository) MarkDelivered(ctx context.Context, id string, deliveredDate string, additionalCost float64) (*Lot, error) {
+	var l Lot
+	err := r.pool.QueryRow(ctx,
+		`UPDATE lots SET
+			shipment_status = 'delivered',
+			unit_cost = (initial_quantity * unit_cost + $3) / NULLIF(initial_quantity, 0),
+			received_at = $2::date,
+			updated_at = now()
+		 WHERE id = $1
+		 RETURNING id, lot_number, product_id, warehouse_id, quantity, initial_quantity, unit_cost, total_cost,
+		           paid_amount, payment_status, received_at, expiry_date, status, supplier, reference_doc, shipment_status, created_at, updated_at`,
+		id, deliveredDate, additionalCost,
+	).Scan(&l.ID, &l.LotNumber, &l.ProductID, &l.WarehouseID, &l.Quantity, &l.InitialQuantity, &l.UnitCost, &l.TotalCost,
+		&l.PaidAmount, &l.PaymentStatus, &l.ReceivedAt, &l.ExpiryDate, &l.Status, &l.Supplier, &l.ReferenceDoc, &l.ShipmentStatus, &l.CreatedAt, &l.UpdatedAt)
+	if err == pgx.ErrNoRows {
+		return nil, ErrLotNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("marking lot delivered: %w", err)
+	}
+	return &l, nil
+}
