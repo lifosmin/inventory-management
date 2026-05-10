@@ -122,7 +122,7 @@ func (s *Service) GetDashboard(ctx context.Context) (*Dashboard, error) {
 			COALESCE(SUM(qty * sell_price), 0),
 			COALESCE(SUM(paid_amount), 0)
 		 FROM sales
-		 WHERE s.shipment_status != 'canceled'`,
+		 WHERE shipment_status != 'canceled'`,
 	).Scan(&d.TotalRevenue, &d.CollectedRevenue)
 	if err != nil && err != pgx.ErrNoRows {
 		return nil, fmt.Errorf("querying revenue/cogs: %w", err)
