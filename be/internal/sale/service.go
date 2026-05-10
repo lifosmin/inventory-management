@@ -318,18 +318,18 @@ type ActiveSaleItem struct {
 }
 
 type Dashboard struct {
-	TotalRevenue          float64            `json:"total_revenue"`
-	TotalCOGS             float64            `json:"total_cogs"`
-	CollectedRevenue      float64            `json:"collected_revenue"`
-	ProfitLoss            float64            `json:"profit_loss"`
-	PendingRevenue        float64            `json:"pending_revenue"`
-	StockValueOnHand      float64            `json:"stock_value_on_hand"`
-	StockValueInTransit   float64            `json:"stock_value_in_transit"`
-	RealizedTotalSpending float64            `json:"realized_total_spending"`
-	UnrealizedTotalSpending float64          `json:"unrealized_total_spending"`
-	LotsUnpaidCount       int                `json:"lots_unpaid_count"`
-	LotsDPCount           int                `json:"lots_dp_count"`
-	StockSummary          []StockSummaryItem `json:"stock_summary"`
-	ActiveSales           []ActiveSaleItem   `json:"active_sales"`
-	BuyersOwing           []TopCustomer      `json:"buyers_owing"`
+	TotalRevenue            float64            `json:"total_revenue"`
+	TotalCOGS               float64            `json:"total_cogs"`
+	CollectedRevenue        float64            `json:"collected_revenue"`
+	ProfitLoss              float64            `json:"profit_loss"`
+	PendingRevenue          float64            `json:"pending_revenue"`
+	StockValueOnHand        float64            `json:"stock_value_on_hand"`
+	StockValueInTransit     float64            `json:"stock_value_in_transit"`
+	RealizedTotalSpending   float64            `json:"realized_total_spending"`
+	UnrealizedTotalSpending float64            `json:"unrealized_total_spending"`
+	LotsUnpaidCount         int                `json:"lots_unpaid_count"`
+	LotsDPCount             int                `json:"lots_dp_count"`
+	StockSummary            []StockSummaryItem `json:"stock_summary"`
+	ActiveSales             []ActiveSaleItem   `json:"active_sales"`
+	BuyersOwing             []TopCustomer      `json:"buyers_owing"`
 }

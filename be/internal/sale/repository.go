@@ -18,13 +18,17 @@ func NewRepository(pool *pgxpool.Pool) *Repository {
 }
 
 func (r *Repository) CreateTx(ctx context.Context, tx pgx.Tx, req CreateSaleRequest) (*Sale, error) {
+	paymentStatus := "unpaid"
+	if req.SellPrice == 0 {
+		paymentStatus = "fully_paid"
+	}
+
 	var s Sale
 	err := tx.QueryRow(ctx,
 		`INSERT INTO sales (product_id, warehouse_id, buyer_name, qty, sell_price, payment_status)
-		 VALUES ($1, $2, $3, $4, $5,
-		         CASE WHEN $5 = 0 THEN 'fully_paid' ELSE 'unpaid' END)
+		 VALUES ($1, $2, $3, $4, $5, $6)
 		 RETURNING id, product_id, warehouse_id, buyer_name, qty, sell_price, paid_amount, payment_status, shipment_status, created_at`,
-		req.ProductID, req.WarehouseID, req.BuyerName, req.Qty, req.SellPrice,
+		req.ProductID, req.WarehouseID, req.BuyerName, req.Qty, req.SellPrice, paymentStatus,
 	).Scan(&s.ID, &s.ProductID, &s.WarehouseID, &s.BuyerName, &s.Qty, &s.SellPrice,
 		&s.PaidAmount, &s.PaymentStatus, &s.ShipmentStatus, &s.CreatedAt)
 	if err != nil {
