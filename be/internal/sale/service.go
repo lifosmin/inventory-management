@@ -120,15 +120,13 @@ func (s *Service) GetDashboard(ctx context.Context) (*Dashboard, error) {
 	err := s.pool.QueryRow(ctx,
 		`SELECT
 			COALESCE(SUM(qty * sell_price), 0),
-			COALESCE(SUM(allocated_qty * unit_cost), 0),
 			COALESCE(SUM(paid_amount), 0)
 		 FROM sales
 		 WHERE s.shipment_status != 'canceled'`,
-	).Scan(&d.TotalRevenue, &d.TotalCOGS, &d.CollectedRevenue)
+	).Scan(&d.TotalRevenue, &d.CollectedRevenue)
 	if err != nil && err != pgx.ErrNoRows {
 		return nil, fmt.Errorf("querying revenue/cogs: %w", err)
 	}
-	d.ProfitLoss = d.CollectedRevenue - d.TotalCOGS
 
 	// Pending revenue — outstanding balance on active unpaid/dp sales
 	err = s.pool.QueryRow(ctx,
