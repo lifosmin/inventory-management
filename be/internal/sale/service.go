@@ -119,11 +119,10 @@ func (s *Service) GetDashboard(ctx context.Context) (*Dashboard, error) {
 	// Realized P&L — only non-canceled sales
 	err := s.pool.QueryRow(ctx,
 		`SELECT
-			COALESCE(SUM(sa.qty * s.sell_price), 0),
-			COALESCE(SUM(sa.qty * sa.unit_cost), 0),
-			COALESCE(SUM(s.paid_amount), 0)
-		 FROM sale_allocations sa
-		 JOIN sales s ON sa.sale_id = s.id
+			COALESCE(SUM(qty * sell_price), 0),
+			COALESCE(SUM(allocated_qty * unit_cost), 0),
+			COALESCE(SUM(paid_amount), 0)
+		 FROM sales
 		 WHERE s.shipment_status != 'canceled'`,
 	).Scan(&d.TotalRevenue, &d.TotalCOGS, &d.CollectedRevenue)
 	if err != nil && err != pgx.ErrNoRows {
