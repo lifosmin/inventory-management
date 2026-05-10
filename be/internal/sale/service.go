@@ -153,11 +153,29 @@ func (s *Service) GetDashboard(ctx context.Context) (*Dashboard, error) {
 
 	// Stock in transit — restocks not yet received
 	err = s.pool.QueryRow(ctx,
-		`SELECT COALESCE(SUM(initial_quantity * unit_cost), 0)
+		`SELECT COALESCE(SUM(quantity * unit_cost), 0)
 		 FROM lots WHERE shipment_status = 'in_progress'`,
 	).Scan(&d.StockValueInTransit)
 	if err != nil && err != pgx.ErrNoRows {
 		return nil, fmt.Errorf("querying stock in transit: %w", err)
+	}
+
+	// Total spending on all lots (active lots only)
+	err = s.pool.QueryRow(ctx,
+		`SELECT COALESCE(SUM(initial_quantity * unit_cost), 0)
+		 FROM lots WHERE shipment_status != 'canceled'`,
+	).Scan(&d.UnrealizedTotalSpending)
+	if err != nil && err != pgx.ErrNoRows {
+		return nil, fmt.Errorf("querying unrealized total spending: %w", err)
+	}
+
+	// Total already paid to lots (active lots only)
+	err = s.pool.QueryRow(ctx,
+		`SELECT COALESCE(SUM(paid_amount), 0)
+		 FROM lots WHERE shipment_status != 'canceled'`,
+	).Scan(&d.RealizedTotalSpending)
+	if err != nil && err != pgx.ErrNoRows {
+		return nil, fmt.Errorf("querying realized total spending: %w", err)
 	}
 
 	// Lot payment status counts (restocks)
@@ -177,7 +195,7 @@ func (s *Service) GetDashboard(ctx context.Context) (*Dashboard, error) {
 			p.name,
 			COALESCE(w.name, 'Unknown'),
 			COALESCE(SUM(CASE WHEN l.shipment_status = 'delivered' AND l.status = 'available' THEN l.quantity ELSE 0 END), 0) AS qty_on_hand,
-			COALESCE(SUM(CASE WHEN l.shipment_status = 'in_progress' THEN l.initial_quantity ELSE 0 END), 0) AS qty_in_transit
+			COALESCE(SUM(CASE WHEN l.shipment_status = 'in_progress' THEN l.quantity ELSE 0 END), 0) AS qty_in_transit
 		 FROM products p
 		 LEFT JOIN lots l ON l.product_id = p.id AND l.shipment_status != 'canceled'
 		 LEFT JOIN warehouses w ON l.warehouse_id = w.id
@@ -275,9 +293,9 @@ type TopCustomer struct {
 }
 
 type StockSummaryItem struct {
-	ProductName  string          `json:"product_name"`
-	QtyOnHand    float64         `json:"qty_on_hand"`
-	QtyInTransit float64         `json:"qty_in_transit"`
+	ProductName  string            `json:"product_name"`
+	QtyOnHand    float64           `json:"qty_on_hand"`
+	QtyInTransit float64           `json:"qty_in_transit"`
 	Warehouses   []WarehouseDetail `json:"warehouses"`
 }
 
@@ -300,16 +318,18 @@ type ActiveSaleItem struct {
 }
 
 type Dashboard struct {
-	TotalRevenue        float64            `json:"total_revenue"`
-	TotalCOGS           float64            `json:"total_cogs"`
-	CollectedRevenue    float64            `json:"collected_revenue"`
-	ProfitLoss          float64            `json:"profit_loss"`
-	PendingRevenue      float64            `json:"pending_revenue"`
-	StockValueOnHand    float64            `json:"stock_value_on_hand"`
-	StockValueInTransit float64            `json:"stock_value_in_transit"`
-	LotsUnpaidCount     int                `json:"lots_unpaid_count"`
-	LotsDPCount         int                `json:"lots_dp_count"`
-	StockSummary        []StockSummaryItem `json:"stock_summary"`
-	ActiveSales         []ActiveSaleItem   `json:"active_sales"`
-	BuyersOwing         []TopCustomer      `json:"buyers_owing"`
+	TotalRevenue          float64            `json:"total_revenue"`
+	TotalCOGS             float64            `json:"total_cogs"`
+	CollectedRevenue      float64            `json:"collected_revenue"`
+	ProfitLoss            float64            `json:"profit_loss"`
+	PendingRevenue        float64            `json:"pending_revenue"`
+	StockValueOnHand      float64            `json:"stock_value_on_hand"`
+	StockValueInTransit   float64            `json:"stock_value_in_transit"`
+	RealizedTotalSpending float64            `json:"realized_total_spending"`
+	UnrealizedTotalSpending float64          `json:"unrealized_total_spending"`
+	LotsUnpaidCount       int                `json:"lots_unpaid_count"`
+	LotsDPCount           int                `json:"lots_dp_count"`
+	StockSummary          []StockSummaryItem `json:"stock_summary"`
+	ActiveSales           []ActiveSaleItem   `json:"active_sales"`
+	BuyersOwing           []TopCustomer      `json:"buyers_owing"`
 }

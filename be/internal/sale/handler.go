@@ -3,17 +3,20 @@ package sale
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/lifosmin/admin-backend/internal/middleware"
 )
 
 type Handler struct {
 	service *Service
+	logger  *slog.Logger
 }
 
-func NewHandler(service *Service) *Handler {
-	return &Handler{service: service}
+func NewHandler(service *Service, logger *slog.Logger) *Handler {
+	return &Handler{service: service, logger: logger}
 }
 
 func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
@@ -33,6 +36,8 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, `{"error":"insufficient stock for this sale"}`, http.StatusConflict)
 			return
 		}
+		reqID, _ := r.Context().Value(middleware.RequestIDKey).(string)
+		h.logger.Error("sale create failed", "error", err, "request_id", reqID)
 		http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
 		return
 	}

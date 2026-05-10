@@ -44,9 +44,9 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
-	cookie, err := r.Cookie("access_token")
+	cookie, err := r.Cookie("refresh_token")
 	if err != nil {
-		http.Error(w, `{"error":"no token found"}`, http.StatusUnauthorized)
+		http.Error(w, `{"error":"no refresh token found"}`, http.StatusUnauthorized)
 		return
 	}
 

@@ -51,6 +51,10 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (*TokenPair, []*h
 	if err != nil {
 		return nil, nil, err
 	}
+	refreshToken, err := GenerateRefreshToken(s.jwtCfg.Secret, u.ID, string(u.Role), s.jwtCfg.RefreshExpiration)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	cookies := []*http.Cookie{
 		{
@@ -62,13 +66,22 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (*TokenPair, []*h
 			SameSite: http.SameSiteNoneMode,
 			MaxAge:   int(s.jwtCfg.AccessExpiration.Seconds()),
 		},
+		{
+			Name:     "refresh_token",
+			Value:    refreshToken,
+			Path:     "/",
+			HttpOnly: true,
+			Secure:   true,
+			SameSite: http.SameSiteNoneMode,
+			MaxAge:   int(s.jwtCfg.RefreshExpiration.Seconds()),
+		},
 	}
 
 	return &TokenPair{AccessToken: accessToken}, cookies, nil
 }
 
-func (s *Service) Refresh(ctx context.Context, accessTokenStr string) (*TokenPair, []*http.Cookie, error) {
-	claims, err := ValidateToken(s.jwtCfg.Secret, accessTokenStr)
+func (s *Service) Refresh(ctx context.Context, refreshTokenStr string) (*TokenPair, []*http.Cookie, error) {
+	claims, err := ValidateRefreshToken(s.jwtCfg.Secret, refreshTokenStr)
 	if err != nil {
 		return nil, nil, ErrInvalidCredentials
 	}
@@ -86,6 +99,10 @@ func (s *Service) Refresh(ctx context.Context, accessTokenStr string) (*TokenPai
 	if err != nil {
 		return nil, nil, err
 	}
+	newRefresh, err := GenerateRefreshToken(s.jwtCfg.Secret, u.ID, string(u.Role), s.jwtCfg.RefreshExpiration)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	cookies := []*http.Cookie{
 		{
@@ -97,6 +114,15 @@ func (s *Service) Refresh(ctx context.Context, accessTokenStr string) (*TokenPai
 			SameSite: http.SameSiteNoneMode,
 			MaxAge:   int(s.jwtCfg.AccessExpiration.Seconds()),
 		},
+		{
+			Name:     "refresh_token",
+			Value:    newRefresh,
+			Path:     "/",
+			HttpOnly: true,
+			Secure:   true,
+			SameSite: http.SameSiteNoneMode,
+			MaxAge:   int(s.jwtCfg.RefreshExpiration.Seconds()),
+		},
 	}
 
 	return &TokenPair{AccessToken: newAccess}, cookies, nil
@@ -106,6 +132,16 @@ func (s *Service) Logout() []*http.Cookie {
 	return []*http.Cookie{
 		{
 			Name:     "access_token",
+			Value:    "",
+			Path:     "/",
+			HttpOnly: true,
+			Secure:   true,
+			SameSite: http.SameSiteNoneMode,
+			MaxAge:   -1,
+			Expires:  time.Unix(0, 0),
+		},
+		{
+			Name:     "refresh_token",
 			Value:    "",
 			Path:     "/",
 			HttpOnly: true,

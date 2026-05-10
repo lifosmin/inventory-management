@@ -64,7 +64,7 @@ func main() {
 	lotHandler := lot.NewHandler(lotSvc, lotRepo)
 	inventoryHandler := inventory.NewHandler(inventorySvc)
 	reportHandler := report.NewHandler(reportSvc)
-	saleHandler := sale.NewHandler(saleSvc)
+	saleHandler := sale.NewHandler(saleSvc, logger)
 
 	r := chi.NewRouter()
 
