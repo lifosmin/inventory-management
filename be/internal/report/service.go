@@ -183,6 +183,7 @@ func (s *Service) Export(ctx context.Context, from, to time.Time) (*ExportReport
 		 FROM lots WHERE status = 'available' AND quantity > 0
 		  AND created_at >= $1 AND created_at < $2
 		   AND shipment_status != 'canceled'`,
+		from, toInclusive,
 	).Scan(&report.NetWorth)
 	if err != nil {
 		return nil, fmt.Errorf("querying net worth: %w", err)
