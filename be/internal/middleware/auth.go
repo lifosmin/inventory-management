@@ -18,13 +18,20 @@ const (
 func Auth(secret string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			cookie, err := r.Cookie("access_token")
-			if err != nil {
+			var tokenStr string
+
+			if bearer := r.Header.Get("Authorization"); strings.HasPrefix(bearer, "Bearer ") {
+				tokenStr = strings.TrimPrefix(bearer, "Bearer ")
+			} else if cookie, err := r.Cookie("access_token"); err == nil {
+				tokenStr = cookie.Value
+			}
+
+			if tokenStr == "" {
 				http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 				return
 			}
 
-			token, err := jwt.Parse(cookie.Value, func(t *jwt.Token) (any, error) {
+			token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (any, error) {
 				if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 					return nil, jwt.ErrSignatureInvalid
 				}

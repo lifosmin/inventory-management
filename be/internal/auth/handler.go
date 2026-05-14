@@ -26,7 +26,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, cookies, err := h.service.Login(r.Context(), req)
+	tokenPair, cookies, err := h.service.Login(r.Context(), req)
 	if err != nil {
 		if err == ErrInvalidCredentials {
 			http.Error(w, `{"error":"invalid credentials"}`, http.StatusUnauthorized)
@@ -40,7 +40,10 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		http.SetCookie(w, c)
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"message": "logged in"})
+	json.NewEncoder(w).Encode(map[string]string{
+		"message":      "logged in",
+		"access_token": tokenPair.AccessToken,
+	})
 }
 
 func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
