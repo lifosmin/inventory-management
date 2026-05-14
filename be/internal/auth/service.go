@@ -63,7 +63,7 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (*TokenPair, []*h
 			Path:     "/",
 			HttpOnly: true,
 			Secure:   true,
-			SameSite: http.SameSiteNoneMode,
+			SameSite: http.SameSiteLaxMode,
 			MaxAge:   int(s.jwtCfg.AccessExpiration.Seconds()),
 		},
 		{
@@ -72,7 +72,7 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (*TokenPair, []*h
 			Path:     "/",
 			HttpOnly: true,
 			Secure:   true,
-			SameSite: http.SameSiteNoneMode,
+			SameSite: http.SameSiteLaxMode,
 			MaxAge:   int(s.jwtCfg.RefreshExpiration.Seconds()),
 		},
 	}
@@ -111,7 +111,7 @@ func (s *Service) Refresh(ctx context.Context, refreshTokenStr string) (*TokenPa
 			Path:     "/",
 			HttpOnly: true,
 			Secure:   true,
-			SameSite: http.SameSiteNoneMode,
+			SameSite: http.SameSiteLaxMode,
 			MaxAge:   int(s.jwtCfg.AccessExpiration.Seconds()),
 		},
 		{
@@ -120,7 +120,7 @@ func (s *Service) Refresh(ctx context.Context, refreshTokenStr string) (*TokenPa
 			Path:     "/",
 			HttpOnly: true,
 			Secure:   true,
-			SameSite: http.SameSiteNoneMode,
+			SameSite: http.SameSiteLaxMode,
 			MaxAge:   int(s.jwtCfg.RefreshExpiration.Seconds()),
 		},
 	}
@@ -136,7 +136,7 @@ func (s *Service) Logout() []*http.Cookie {
 			Path:     "/",
 			HttpOnly: true,
 			Secure:   true,
-			SameSite: http.SameSiteNoneMode,
+			SameSite: http.SameSiteLaxMode,
 			MaxAge:   -1,
 			Expires:  time.Unix(0, 0),
 		},
@@ -146,7 +146,7 @@ func (s *Service) Logout() []*http.Cookie {
 			Path:     "/",
 			HttpOnly: true,
 			Secure:   true,
-			SameSite: http.SameSiteNoneMode,
+			SameSite: http.SameSiteLaxMode,
 			MaxAge:   -1,
 			Expires:  time.Unix(0, 0),
 		},
