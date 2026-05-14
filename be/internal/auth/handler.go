@@ -41,19 +41,31 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
-		"message":      "logged in",
-		"access_token": tokenPair.AccessToken,
+		"message":       "logged in",
+		"access_token":  tokenPair.AccessToken,
+		"refresh_token": tokenPair.RefreshToken,
 	})
 }
 
 func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
-	cookie, err := r.Cookie("refresh_token")
-	if err != nil {
+	var body struct {
+		RefreshToken string `json:"refresh_token"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+
+	refreshTokenStr := body.RefreshToken
+	if refreshTokenStr == "" {
+		if cookie, err := r.Cookie("refresh_token"); err == nil {
+			refreshTokenStr = cookie.Value
+		}
+	}
+
+	if refreshTokenStr == "" {
 		http.Error(w, `{"error":"no refresh token found"}`, http.StatusUnauthorized)
 		return
 	}
 
-	_, cookies, err := h.service.Refresh(r.Context(), cookie.Value)
+	tokenPair, cookies, err := h.service.Refresh(r.Context(), refreshTokenStr)
 	if err != nil {
 		http.Error(w, `{"error":"unable to refresh"}`, http.StatusUnauthorized)
 		return
@@ -63,7 +75,11 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 		http.SetCookie(w, c)
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"message": "refreshed"})
+	json.NewEncoder(w).Encode(map[string]string{
+		"message":       "refreshed",
+		"access_token":  tokenPair.AccessToken,
+		"refresh_token": tokenPair.RefreshToken,
+	})
 }
 
 func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {

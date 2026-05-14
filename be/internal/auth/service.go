@@ -31,7 +31,8 @@ type LoginRequest struct {
 }
 
 type TokenPair struct {
-	AccessToken string
+	AccessToken  string
+	RefreshToken string
 }
 
 func (s *Service) Login(ctx context.Context, req LoginRequest) (*TokenPair, []*http.Cookie, error) {
@@ -77,7 +78,7 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (*TokenPair, []*h
 		},
 	}
 
-	return &TokenPair{AccessToken: accessToken}, cookies, nil
+	return &TokenPair{AccessToken: accessToken, RefreshToken: refreshToken}, cookies, nil
 }
 
 func (s *Service) Refresh(ctx context.Context, refreshTokenStr string) (*TokenPair, []*http.Cookie, error) {
@@ -125,7 +126,7 @@ func (s *Service) Refresh(ctx context.Context, refreshTokenStr string) (*TokenPa
 		},
 	}
 
-	return &TokenPair{AccessToken: newAccess}, cookies, nil
+	return &TokenPair{AccessToken: newAccess, RefreshToken: newRefresh}, cookies, nil
 }
 
 func (s *Service) Logout() []*http.Cookie {
