@@ -179,17 +179,6 @@ func (s *Service) Export(ctx context.Context, from, to time.Time) (*ExportReport
 	toInclusive := to.Add(24 * time.Hour)
 
 	err := s.pool.QueryRow(ctx,
-		`SELECT COALESCE(SUM(quantity * unit_cost), 0)
-		 FROM lots WHERE status = 'available' AND quantity > 0
-		  AND created_at >= $1 AND created_at < $2
-		   AND shipment_status != 'canceled'`,
-		from, toInclusive,
-	).Scan(&report.NetWorth)
-	if err != nil {
-		return nil, fmt.Errorf("querying net worth: %w", err)
-	}
-
-	err = s.pool.QueryRow(ctx,
 		`SELECT
 			COALESCE(SUM(sa.qty * s.sell_price), 0),
 			COALESCE(SUM(sa.qty * sa.unit_cost), 0)
@@ -239,6 +228,7 @@ func (s *Service) Export(ctx context.Context, from, to time.Time) (*ExportReport
 	if err != nil {
 		return nil, fmt.Errorf("querying restock cost summary: %w", err)
 	}
+	report.NetWorth = report.RestockCostSummary.TotalOrdered - report.TotalCOGS // Simplified net worth calculation
 
 	// Product performance
 	perfRows, err := s.pool.Query(ctx,
@@ -309,8 +299,10 @@ func (s *Service) Export(ctx context.Context, from, to time.Time) (*ExportReport
 		 JOIN products p ON l.product_id = p.id
 		 JOIN warehouses w ON l.warehouse_id = w.id
 		 WHERE l.status = 'available' AND l.quantity > 0
+		 AND l.created_at >= $1 AND l.created_at < $2
 		 GROUP BY p.name, w.name
 		 ORDER BY p.name, w.name`,
+		from, toInclusive,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("querying stocks: %w", err)
