@@ -18,14 +18,12 @@ const (
 func Auth(secret string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			var tokenStr string
-
-			if bearer := r.Header.Get("Authorization"); strings.HasPrefix(bearer, "Bearer ") {
-				tokenStr = strings.TrimPrefix(bearer, "Bearer ")
-			} else if cookie, err := r.Cookie("access_token"); err == nil {
-				tokenStr = cookie.Value
+			bearer := r.Header.Get("Authorization")
+			if !strings.HasPrefix(bearer, "Bearer ") {
+				http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+				return
 			}
-
+			tokenStr := strings.TrimPrefix(bearer, "Bearer ")
 			if tokenStr == "" {
 				http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 				return
@@ -44,6 +42,11 @@ func Auth(secret string) func(http.Handler) http.Handler {
 
 			claims, ok := token.Claims.(jwt.MapClaims)
 			if !ok {
+				http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+				return
+			}
+
+			if typ, _ := claims["typ"].(string); typ != "access" {
 				http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 				return
 			}
