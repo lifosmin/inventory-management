@@ -192,8 +192,24 @@ func (r *Repository) ListByProductFIFO(ctx context.Context, productID string) ([
 }
 
 func (r *Repository) ListAvailableByProductWarehouse(ctx context.Context, productID, warehouseID string) ([]Lot, error) {
+	return r.listAvailableByProductWarehouse(ctx, r.pool, productID, warehouseID, false)
+}
+
+// ListAvailableByProductWarehouseForUpdateTx returns FIFO-ordered available lots
+// for (product, warehouse), locking each row with FOR UPDATE so concurrent sales
+// cannot allocate against the same quantities.
+func (r *Repository) ListAvailableByProductWarehouseForUpdateTx(ctx context.Context, tx pgx.Tx, productID, warehouseID string) ([]Lot, error) {
+	return r.listAvailableByProductWarehouse(ctx, tx, productID, warehouseID, true)
+}
+
+type pgxQuerier interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+}
+
+func (r *Repository) listAvailableByProductWarehouse(ctx context.Context, q pgxQuerier, productID, warehouseID string, forUpdate bool) ([]Lot, error) {
 	var strategy string
-	err := r.pool.QueryRow(ctx,
+	err := q.QueryRow(ctx,
 		`SELECT fifo_strategy FROM warehouses WHERE id = $1`, warehouseID,
 	).Scan(&strategy)
 	if err != nil {
@@ -211,25 +227,21 @@ func (r *Repository) ListAvailableByProductWarehouse(ctx context.Context, produc
 		deliveredOnly = false
 	}
 
-	var rows pgx.Rows
-	if deliveredOnly {
-		rows, err = r.pool.Query(ctx,
-			`SELECT id, lot_number, product_id, warehouse_id, quantity, initial_quantity, unit_cost, total_cost,
-			        received_at, expiry_date, status, supplier, reference_doc, shipment_status, created_at, updated_at
-			 FROM lots
-			 WHERE product_id = $1 AND warehouse_id = $2 AND status = 'available' AND quantity > 0
-			   AND shipment_status = 'delivered'
-			 ORDER BY `+orderBy, productID, warehouseID,
-		)
-	} else {
-		rows, err = r.pool.Query(ctx,
-			`SELECT id, lot_number, product_id, warehouse_id, quantity, initial_quantity, unit_cost, total_cost,
-			        received_at, expiry_date, status, supplier, reference_doc, shipment_status, created_at, updated_at
-			 FROM lots
-			 WHERE product_id = $1 AND warehouse_id = $2 AND status = 'available' AND quantity > 0
-			 ORDER BY `+orderBy, productID, warehouseID,
-		)
+	lockClause := ""
+	if forUpdate {
+		lockClause = " FOR UPDATE"
 	}
+
+	baseSQL := `SELECT id, lot_number, product_id, warehouse_id, quantity, initial_quantity, unit_cost, total_cost,
+	                   received_at, expiry_date, status, supplier, reference_doc, shipment_status, created_at, updated_at
+	            FROM lots
+	            WHERE product_id = $1 AND warehouse_id = $2 AND status = 'available' AND quantity > 0`
+	if deliveredOnly {
+		baseSQL += ` AND shipment_status = 'delivered'`
+	}
+	baseSQL += ` ORDER BY ` + orderBy + lockClause
+
+	rows, err := q.Query(ctx, baseSQL, productID, warehouseID)
 	if err != nil {
 		return nil, fmt.Errorf("listing available lots: %w", err)
 	}

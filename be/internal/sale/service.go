@@ -30,7 +30,15 @@ func NewService(repo *Repository, lotRepo *lot.Repository, pool *pgxpool.Pool) *
 }
 
 func (s *Service) Create(ctx context.Context, req CreateSaleRequest) (*Sale, error) {
-	lots, err := s.lotRepo.ListAvailableByProductWarehouse(ctx, req.ProductID, req.WarehouseID)
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("beginning transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	// Lock candidate lots inside the tx so concurrent sales cannot allocate
+	// against the same quantities. Validate stock against the locked snapshot.
+	lots, err := s.lotRepo.ListAvailableByProductWarehouseForUpdateTx(ctx, tx, req.ProductID, req.WarehouseID)
 	if err != nil {
 		return nil, fmt.Errorf("fetching available lots: %w", err)
 	}
@@ -43,14 +51,7 @@ func (s *Service) Create(ctx context.Context, req CreateSaleRequest) (*Sale, err
 		return nil, ErrInsufficientStock
 	}
 
-	var sale *Sale
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("beginning transaction: %w", err)
-	}
-	defer tx.Rollback(ctx)
-
-	sale, err = s.repo.CreateTx(ctx, tx, req)
+	sale, err := s.repo.CreateTx(ctx, tx, req)
 	if err != nil {
 		return nil, err
 	}

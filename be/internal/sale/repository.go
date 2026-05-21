@@ -174,22 +174,10 @@ func (r *Repository) UpdateStatus(ctx context.Context, id string, req UpdateStat
 }
 
 func (r *Repository) AddPayment(ctx context.Context, id string, amount float64) (*Sale, error) {
-	var currentPaid, totalOwed float64
-	err := r.pool.QueryRow(ctx,
-		`SELECT paid_amount, qty * sell_price FROM sales WHERE id = $1`, id,
-	).Scan(&currentPaid, &totalOwed)
-	if err == pgx.ErrNoRows {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("fetching sale for payment: %w", err)
-	}
-	if currentPaid+amount > totalOwed {
-		return nil, ErrPaymentExceedsTotal
-	}
-
+	// Single atomic UPDATE: the WHERE clause enforces the overpayment guard,
+	// so concurrent payments cannot both pass an out-of-band check.
 	var s Sale
-	err = r.pool.QueryRow(ctx,
+	err := r.pool.QueryRow(ctx,
 		`UPDATE sales SET
 			paid_amount = paid_amount + $2,
 			payment_status = CASE
@@ -197,13 +185,24 @@ func (r *Repository) AddPayment(ctx context.Context, id string, amount float64) 
 				WHEN paid_amount + $2 >= qty * sell_price THEN 'fully_paid'
 				ELSE 'dp'
 			END
-		 WHERE id = $1
+		 WHERE id = $1 AND paid_amount + $2 <= qty * sell_price
 		 RETURNING id, product_id, warehouse_id, buyer_name, qty, sell_price, paid_amount, payment_status, shipment_status, created_at`,
 		id, amount,
 	).Scan(&s.ID, &s.ProductID, &s.WarehouseID, &s.BuyerName, &s.Qty, &s.SellPrice,
 		&s.PaidAmount, &s.PaymentStatus, &s.ShipmentStatus, &s.CreatedAt)
 	if err == pgx.ErrNoRows {
-		return nil, nil
+		// Zero rows updated: either the sale doesn't exist, or the payment
+		// would overshoot the total. Disambiguate for the caller.
+		var exists bool
+		if err2 := r.pool.QueryRow(ctx,
+			`SELECT EXISTS(SELECT 1 FROM sales WHERE id = $1)`, id,
+		).Scan(&exists); err2 != nil {
+			return nil, fmt.Errorf("checking sale existence: %w", err2)
+		}
+		if !exists {
+			return nil, nil
+		}
+		return nil, ErrPaymentExceedsTotal
 	}
 	if err != nil {
 		return nil, fmt.Errorf("adding sale payment: %w", err)
@@ -234,8 +233,16 @@ func (r *Repository) Cancel(ctx context.Context, id string) error {
 		return ErrSaleAlreadyCanceled
 	}
 
+	// Lock the affected lots up front, in lot_id order, so concurrent sales or
+	// cancels touching the same lots don't race the restore. Ordering avoids
+	// deadlocks between simultaneous cancels of overlapping allocation sets.
 	rows, err := tx.Query(ctx,
-		`SELECT lot_id, qty FROM sale_allocations WHERE sale_id = $1`, id,
+		`SELECT sa.lot_id, sa.qty
+		 FROM sale_allocations sa
+		 JOIN lots l ON l.id = sa.lot_id
+		 WHERE sa.sale_id = $1
+		 ORDER BY sa.lot_id
+		 FOR UPDATE OF l`, id,
 	)
 	if err != nil {
 		return fmt.Errorf("fetching allocations: %w", err)
